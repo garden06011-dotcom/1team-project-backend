@@ -1,0 +1,202 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model analysis_requests {
+  idx                Int                       @id @default(autoincrement())
+  user_id            String?                   @db.VarChar(50)
+  category           String?                   @db.VarChar(50)
+  rent_range         String?                   @db.VarChar(50)
+  region_city        String?                   @db.LongText
+  region_district    String?                   @db.LongText
+  region_subdistrict String?                   @db.LongText
+  status             analysis_requests_status? @default(pending)
+  created_at         DateTime?                 @db.DateTime(0)
+  users              users?                    @relation(fields: [user_id], references: [user_id], onDelete: Restrict, onUpdate: Restrict, map: "analysis_requests_ibfk_1")
+  recommendations    recommendations[]
+
+  @@index([user_id], map: "user_id")
+}
+
+model charts_data {
+  idx               Int                     @id @default(autoincrement())
+  recommendation_id Int?
+  chart_type        charts_data_chart_type?
+  data_json         String?                 @db.LongText
+  created_at        DateTime?               @db.DateTime(0)
+  recommendations   recommendations?        @relation(fields: [recommendation_id], references: [idx], onDelete: Restrict, onUpdate: Restrict, map: "charts_data_ibfk_1")
+
+  @@index([recommendation_id], map: "recommendation_id")
+}
+
+model comments {
+  idx             Int              @id @default(autoincrement())
+  post_id         Int?
+  user_id         String?          @db.VarChar(50)
+  content         String?          @db.Text
+  created_at      DateTime?        @db.DateTime(0)
+  community_posts community_posts? @relation(fields: [post_id], references: [idx], onDelete: Restrict, onUpdate: Restrict, map: "comments_ibfk_1")
+  users           users?           @relation(fields: [user_id], references: [user_id], onDelete: Restrict, onUpdate: Restrict, map: "comments_ibfk_2")
+
+  @@index([post_id], map: "post_id")
+  @@index([user_id], map: "user_id")
+}
+
+model community_posts {
+  idx            Int                       @id @default(autoincrement())
+  user_id        String?                   @db.VarChar(50)
+  category       community_posts_category?
+  title          String?                   @db.VarChar(100)
+  content        String?                   @db.Text
+  tags           String?                   @db.VarChar(255)
+  views          Int?                      @default(0)
+  likes          Int?                      @default(0)
+  comments_count Int?                      @default(0)
+  created_at     DateTime?                 @db.DateTime(0)
+  updated_at     DateTime?                 @db.DateTime(0)
+  comments       comments[]
+  users          users?                    @relation(fields: [user_id], references: [user_id], onDelete: Restrict, onUpdate: Restrict, map: "community_posts_ibfk_1")
+
+  @@index([user_id], map: "user_id")
+}
+
+model email_verifications {
+  idx        Int                          @id @default(autoincrement())
+  email      String                       @db.VarChar(255)
+  code       String                       @db.VarChar(6)
+  purpose    email_verifications_purpose?
+  expires_at DateTime?                    @db.DateTime(0)
+  is_used    Boolean?                     @default(false)
+  created_at DateTime?                    @db.DateTime(0)
+  user_id    String?                      @db.VarChar(50)
+  users      users?                       @relation(fields: [user_id], references: [user_id], onDelete: Restrict, onUpdate: Restrict, map: "email_verifications_ibfk_1")
+
+  @@index([user_id], map: "user_id")
+}
+
+model facilities {
+  idx               Int                       @id @default(autoincrement())
+  recommendation_id Int?
+  facility_type     facilities_facility_type?
+  name              String?                   @db.VarChar(100)
+  distance          Float?                    @db.Float
+  count             Int?
+  created_at        DateTime?                 @db.DateTime(0)
+  recommendations   recommendations?          @relation(fields: [recommendation_id], references: [idx], onDelete: Restrict, onUpdate: Restrict, map: "facilities_ibfk_1")
+
+  @@index([recommendation_id], map: "recommendation_id")
+}
+
+model notifications {
+  idx        Int                 @id @default(autoincrement())
+  user_id    String?             @db.VarChar(50)
+  type       notifications_type?
+  message    String?             @db.Text
+  is_read    Boolean?            @default(false)
+  created_at DateTime?           @db.DateTime(0)
+  users      users?              @relation(fields: [user_id], references: [user_id], onDelete: Restrict, onUpdate: Restrict, map: "notifications_ibfk_1")
+
+  @@index([user_id], map: "user_id")
+}
+
+model recommendations {
+  idx                 Int                @id @default(autoincrement())
+  request_id          Int?
+  rank                Int?
+  address             String?            @db.VarChar(255)
+  latitude            Float?
+  longitude           Float?
+  total_score         Float?             @db.Float
+  foot_traffic_score  Float?             @db.Float
+  rent_score          Float?             @db.Float
+  competition_score   Float?             @db.Float
+  accessibility_score Float?             @db.Float
+  ai_summary          String?            @db.Text
+  created_at          DateTime?          @db.DateTime(0)
+  charts_data         charts_data[]
+  facilities          facilities[]
+  analysis_requests   analysis_requests? @relation(fields: [request_id], references: [idx], onDelete: Restrict, onUpdate: Restrict, map: "recommendations_ibfk_1")
+
+  @@index([request_id], map: "request_id")
+}
+
+model users {
+  idx                 Int                   @id @default(autoincrement())
+  user_id             String                @unique(map: "user_id") @db.VarChar(50)
+  password            String                @db.VarChar(255)
+  name                String?               @db.VarChar(50)
+  nickname            String?               @db.VarChar(50)
+  role                users_role?           @default(member)
+  rrn                 String?               @db.VarChar(50)
+  sex                 users_sex?
+  created_at          DateTime?             @db.DateTime(0)
+  updated_at          DateTime?             @db.DateTime(0)
+  use_yn              users_use_yn?         @default(Y)
+  analysis_requests   analysis_requests[]
+  comments            comments[]
+  community_posts     community_posts[]
+  email_verifications email_verifications[]
+  notifications       notifications[]
+}
+
+enum community_posts_category {
+  // 창업준비 @map("창업준비")
+  // 홍보 @map("홍보")
+  // 노하우 @map("노하우")
+  // 정보공유 @map("정보공유")
+}
+
+enum charts_data_chart_type {
+  foot_traffic
+  sales
+  competition
+  trend
+}
+
+enum facilities_facility_type {
+  bus
+  subway
+  parking
+  school
+  hospital
+  bar
+}
+
+enum notifications_type {
+  // 게시물 @map("게시물")
+  // 댓글 @map("댓글")
+  // 채팅알림 @map("채팅알림")
+}
+
+enum email_verifications_purpose {
+  signup
+  reset
+}
+
+enum users_role {
+  guest
+  member
+  admin
+}
+
+enum analysis_requests_status {
+  pending
+  done
+  failed
+}
+
+enum users_sex {
+  M
+  F
+}
+
+enum users_use_yn {
+  Y
+  N
+}
