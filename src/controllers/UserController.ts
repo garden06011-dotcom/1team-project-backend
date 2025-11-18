@@ -44,7 +44,7 @@ export const signup = async (req: Request, res: Response) => {
                 name: name,
                 nickname: nickname,
                 sex: sex,
-                rrn : Number(rrn),
+                rrn : (rrn),
                 created_at: new Date(),
                 updated_at: new Date(),
                 use_yn: 'Y'

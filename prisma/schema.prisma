@@ -51,7 +51,7 @@ model comments {
 model community_posts {
   idx            Int                       @id @default(autoincrement())
   user_id        String?                   @db.VarChar(50)
-  category       community_posts_category?
+  category       community_posts_category? 
   title          String?                   @db.VarChar(100)
   content        String?                   @db.Text
   tags           String?                   @db.VarChar(255)
@@ -146,10 +146,9 @@ model users {
 }
 
 enum community_posts_category {
-  // 창업준비 @map("창업준비")
-  // 홍보 @map("홍보")
-  // 노하우 @map("노하우")
-  // 정보공유 @map("정보공유")
+  INFO_SHARE @map("정보공유")
+  QUESTION   @map("질문")
+  FREE       @map("자유")
 }
 
 enum charts_data_chart_type {
@@ -169,9 +168,9 @@ enum facilities_facility_type {
 }
 
 enum notifications_type {
-  // 게시물 @map("게시물")
-  // 댓글 @map("댓글")
-  // 채팅알림 @map("채팅알림")
+  POST    @map("게시물")
+  COMMENT @map("댓글")
+  CHAT    @map("채팅알림")
 }
 
 enum email_verifications_purpose {
