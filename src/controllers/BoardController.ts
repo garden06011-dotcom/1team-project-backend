@@ -60,12 +60,15 @@ export const BoardPage = async (req: Request, res: Response) => {
                 created_at: sort === 'latest' ? 'desc' : 'asc', // 글 작성일
             }, // 글 작성일 정렬
         });
+        // totalCount도 findMany와 동일한 where 조건을 사용해야 정확한 페이지네이션 가능
         const totalCount = await prisma.community_posts.count({
             where: {
                 title: titleCondition,
                 content: contentCondition,
                 tags: tagsCondition,
                 category: categoryCondition,
+                user_id: userIdCondition,
+                users: { nickname: nicknameCondition },
             },
         });
         
@@ -98,7 +101,6 @@ export const BoardPage = async (req: Request, res: Response) => {
 
 
 // 게시글 저장하기
-
 export const saveBoard = async (req: Request, res: Response) => {
     try {
         const { title, content, category, tags, user_id } = req.body;
@@ -179,6 +181,39 @@ export const getBoardDetail = async (req: Request, res: Response) => {
     } catch (error:any) {
         console.log(error);
         res.status(500).json({ message: '게시글 상세 페이지 요청 실패:', error })
+    }
+}
+
+// 특정 사용자의 게시글 목록 조회
+export const getUserBoards = async (req: Request, res: Response) => {
+    try {
+        const { userId } = req.params;
+
+        if (!userId) {
+            return res.status(400).json({ message: '유효하지 않은 사용자 ID 입니다.' });
+        }
+
+        const posts = await prisma.community_posts.findMany({
+            where: {
+                user_id: userId,
+            },
+            include: {
+                users: true,
+            },
+            orderBy: {
+                created_at: 'desc',
+            },
+        });
+
+        const mappedPosts = posts.map((post) => ({
+            ...post,
+            category: post.category ? categoryReverseMap[post.category] : null,
+        }));
+
+        res.status(200).json({ message: '사용자 게시글 조회 성공', data: mappedPosts });
+    } catch (error:any) {
+        console.log(error);
+        res.status(500).json({ message: '사용자 게시글을 불러오지 못했습니다.', error })
     }
 }
 
@@ -279,12 +314,84 @@ export const commentBoard = async (req: Request, res: Response) => {
     }
 }
 
+// 게시글 수정 불러오기
+export const getBoardEdit = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
 
+        // 유효성 검사
+        if(!id || isNaN(Number(id))) {
+            return res.status(400).json({ message: '유효하지 않은 게시글 ID 입니다.' })
+        }
+        // 게시글 조회
+        const post = await prisma.community_posts.findUnique({
+            where: {
+                idx: Number(id),
+            },
+        });
+        if(!post) {
+            return res.status(404).json({ message: '게시글을 찾을 수 없습니다.' })
+        }
+        // 카테고리 한글로 바꿔서 보내기
+        const mappedPost = {
+            ...post,
+            category: post.category ? categoryReverseMap[post.category] : null,
+        }
+        res.status(200).json({ message: '게시글 수정 불러오기 성공', data: mappedPost })
+    } catch (error:any) {
+        console.log(error);
+        res.status(500).json({ message: '게시글 수정 불러오기 실패:', error: error.message })
+    }
+}
 
 
 // 게시글 수정
 export const updateBoard = async (req: Request, res: Response) => {
     try {
+        const { id } = req.params;
+        const { title, content, tags, category, user_id } = req.body;
+        // 유효성 검사
+        if(!id || isNaN(Number(id))) {
+            return res.status(400).json({ message: '유효하지 않는 게시글 ID 입니다.' })
+        }
+
+        if(!title || !content) {
+            return res.status(400).json({ message: '제목 및 내용을 입력해 주세요.' })
+        }
+
+        if(!category) {
+            return res.status(400).json({ message: '카테고리를 선택해 주세요.' })
+        }
+
+        
+        if(!user_id) {
+            return res.status(400).json({ message: '로그인이 필요합니다.' })
+        }
+
+        const post = await prisma.community_posts.findUnique({
+            where: { idx: Number(id) },
+        })
+
+        if(!post) {
+            return res.status(404).json({ message: '게시글을 찾을 수 없습니다.' })
+        }
+        
+        if(post.user_id !== user_id) {
+            return res.status(403).json({ message: '게시글 수정 권한이 없습니다.' })
+        }
+
+        const normalizedCategory = categoryMap[category] || null;
+
+        const updatedPost = await prisma.community_posts.update({
+            where: { idx: Number(id) },
+            data: { title, content, category: normalizedCategory, tags: tags || null },
+        })
+
+        if(!updatedPost) {
+            return res.status(404).json({ message: '게시글을 찾을 수 없습니다.' })
+        }
+
+        res.status(200).json({ message: '게시글 수정 성공', data: updatedPost })
 
     } catch (error:any) {
         console.log(error);
