@@ -60,12 +60,15 @@ export const BoardPage = async (req: Request, res: Response) => {
                 created_at: sort === 'latest' ? 'desc' : 'asc', // 글 작성일
             }, // 글 작성일 정렬
         });
+        // totalCount도 findMany와 동일한 where 조건을 사용해야 정확한 페이지네이션 가능
         const totalCount = await prisma.community_posts.count({
             where: {
                 title: titleCondition,
                 content: contentCondition,
                 tags: tagsCondition,
                 category: categoryCondition,
+                user_id: userIdCondition,
+                users: { nickname: nicknameCondition },
             },
         });
         
@@ -98,7 +101,6 @@ export const BoardPage = async (req: Request, res: Response) => {
 
 
 // 게시글 저장하기
-
 export const saveBoard = async (req: Request, res: Response) => {
     try {
         const { title, content, category, tags, user_id } = req.body;
@@ -142,6 +144,7 @@ export const saveBoard = async (req: Request, res: Response) => {
 export const getBoardDetail = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
+        const { user_id } = req.query;
 
         if (!id || isNaN(Number(id))) {
             return res.status(400).json({ message: '유효하지 않은 게시글 ID 입니다.' });
@@ -168,11 +171,48 @@ export const getBoardDetail = async (req: Request, res: Response) => {
             return res.status(404).json({ message: '게시글을 찾을 수 없습니다.' });
         }
 
-        // 카테고리 한글로 바꿔서 보내기
-        const mappedPost = {
-            ...post,
-            category: post.category ? categoryReverseMap[post.category] : null,
+
+        let isLiked = false;
+        if(user_id && typeof user_id === 'string') {
+            const likeRecord = await prisma.post_likes.findUnique({
+                where: {
+                    // @@unique([post_id, user_id]) 이름이 uniq_post_user 라서 이렇게 사용
+                    post_id_user_id: {
+                        post_id: post.idx,
+                        user_id: user_id
+                    },
+                },
+            });
+            isLiked = !!likeRecord;
         }
+
+        // 조회수 증가 (GET 요청이므로 항상 +1)
+        // update에 include를 추가하여 한 번의 쿼리로 조회수 증가 + 관련 데이터 조회를 동시에 처리
+        // 이렇게 하면 findUnique를 다시 호출할 필요가 없어 중복 조회를 방지할 수 있습니다
+        const updatedPost = await prisma.community_posts.update({
+            where: { idx: Number(id) },
+            data: {
+                views: (post.views ?? 0) + 1, // 현재 조회수에서 +1 증가
+            },
+            include: {
+                users: true,
+                comments: {
+                    include: {
+                        users: true,
+                    },
+                    orderBy: {
+                        created_at: 'desc',
+                    },
+                },
+            },
+        });
+
+        // 카테고리 한글로 바꿔서 보내기 (증가된 views 포함)
+        const mappedPost = {
+            ...updatedPost,
+            category: updatedPost.category ? categoryReverseMap[updatedPost.category] : null,
+            isLiked,
+        };
 
         res.status(200).json({ message: '게시글 조회 성공', data: mappedPost });
 
@@ -182,48 +222,200 @@ export const getBoardDetail = async (req: Request, res: Response) => {
     }
 }
 
-// 좋아요 클릭시 좋아요 수 토글 (증가/감소)
-export const likeBoard = async (req: Request, res: Response) => {
+// 특정 사용자의 게시글 목록 조회
+export const getUserBoards = async (req: Request, res: Response) => {
     try {
-        const { id } = req.params;
-        const { action } = req.body; // 'like' 또는 'unlike'
+        const { userId } = req.params;
 
-        // 유효성 검사
-        if (!id || isNaN(Number(id))) {
-            return res.status(400).json({ message: '유효하지 않은 게시글 ID 입니다.' });
+        if (!userId) {
+            return res.status(400).json({ message: '유효하지 않은 사용자 ID 입니다.' });
         }
 
-        // 게시글 조회
-        const post = await prisma.community_posts.findUnique({
+        const posts = await prisma.community_posts.findMany({
             where: {
-                idx: Number(id),
-            }
-        })
+                user_id: userId,
+            },
+            include: {
+                users: true,
+            },
+            orderBy: {
+                created_at: 'desc',
+            },
+        });
 
-        if (!post) {
-            return res.status(404).json({ message: '게시글을 찾을 수 없습니다.' });
-        }
+        const mappedPosts = posts.map((post) => ({
+            ...post,
+            category: post.category ? categoryReverseMap[post.category] : null,
+        }));
 
-        // 좋아요 수 토글 (action에 따라 증가 또는 감소)
-        const increment = action === 'unlike' ? -1 : 1;
-        const updatedPost = await prisma.community_posts.update({
-            where: { idx: Number(id) },
-            data: {
-                // post.likes 에서 ?? 는 null 또는 undefined 일 때만 오른쪽 값을 대신 사용하라는 뜻
-                // 즉 post.likes 값이 null 또는 undefined 일 때만 0을 사용 그 외의 값은 그 값을 사용해라
-                likes: Math.max(0, (post.likes ?? 0) + increment), // 음수 방지
-            }
-        })
+        
 
-        res.status(200).json({ 
-            message: action === 'unlike' ? '좋아요 취소 성공' : '좋아요 처리 성공', 
-            data: updatedPost 
-        })
+        res.status(200).json({ message: '사용자 게시글 조회 성공', data: mappedPosts });
     } catch (error:any) {
         console.log(error);
-        res.status(500).json({ message: '좋아요 처리에 실패하였습니다', error: error.message || error })
+        res.status(500).json({ message: '사용자 게시글을 불러오지 못했습니다.', error })
     }
 }
+
+// 좋아요 클릭시 좋아요 수 토글 (증가/감소)
+// export const likeBoard = async (req: Request, res: Response) => {
+//     try {
+//         const { id } = req.params;
+//         const { action, user_id } = req.body; // 'like' 또는 'unlike'
+
+//         // 유효성 검사
+//         if (!id || isNaN(Number(id))) {
+//             return res.status(400).json({ message: '유효하지 않은 게시글 ID 입니다.' });
+//         }
+
+//         // 게시글 조회
+//         const post = await prisma.community_posts.findUnique({
+//             where: {
+//                 idx: Number(id),
+//             }
+//         })
+
+//         if (!post) {
+//             return res.status(404).json({ message: '게시글을 찾을 수 없습니다.' });
+//         }
+
+//         // 좋아요 수 토글 (action에 따라 증가 또는 감소)
+//         const increment = action === 'unlike' ? -1 : 1;
+//         const updatedPost = await prisma.community_posts.update({
+//             where: { idx: Number(id) },
+//             data: {
+//                 // post.likes 에서 ?? 는 null 또는 undefined 일 때만 오른쪽 값을 대신 사용하라는 뜻
+//                 // 즉 post.likes 값이 null 또는 undefined 일 때만 0을 사용 그 외의 값은 그 값을 사용해라
+//                 likes: Math.max(0, (post.likes ?? 0) + increment), // 음수 방지
+//             }
+//         })
+
+//         res.status(200).json({ 
+//             message: action === 'unlike' ? '좋아요 취소 성공' : '좋아요 처리 성공', 
+//             data: updatedPost 
+//         })
+//     } catch (error:any) {
+//         console.log(error);
+//         res.status(500).json({ message: '좋아요 처리에 실패하였습니다', error: error.message || error })
+//     }
+// }
+
+export const likeBoard = async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { action, user_id } = req.body; // ✅ user_id 추가
+  
+      if (!id || isNaN(Number(id))) {
+        return res.status(400).json({ message: '유효하지 않은 게시글 ID 입니다.' });
+      }
+  
+      if (!user_id) {
+        return res.status(400).json({ message: '로그인이 필요합니다.' });
+      }
+  
+      const postId = Number(id);
+  
+      // 트랜잭션으로 좋아요 기록 + 카운트 동기화
+      const result = await prisma.$transaction(async (tx) => {
+        // 이미 좋아요 눌렀는지 확인
+        const existingLike = await tx.post_likes.findUnique({
+          where: {
+            post_id_user_id: {
+              post_id: postId,
+              user_id,
+            },
+          },
+        });
+  
+        if (action === 'like') {
+          if (existingLike) {
+            // 이미 좋아요 눌렀으면 그냥 현재 상태만 반환 (증가 X)
+            const post = await tx.community_posts.findUnique({
+              where: { idx: postId },
+            });
+            return { post, isLiked: true, message: '이미 좋아요를 누르셨습니다.' };
+          }
+  
+          // 새 좋아요 기록 생성 + likes +1
+          await tx.post_likes.create({
+            data: {
+              post_id: postId,
+              user_id,
+              created_at: new Date(),
+            },
+          });
+  
+          const updatedPost = await tx.community_posts.update({
+            where: { idx: postId },
+            data: {
+              likes: { increment: 1 },
+            },
+          });
+  
+          return { post: updatedPost, isLiked: true, message: '좋아요 처리 성공' };
+        }
+  
+        if (action === 'unlike') {
+          if (!existingLike) {
+            // 좋아요 기록이 없으면 그냥 현재 상태 반환
+            const post = await tx.community_posts.findUnique({
+              where: { idx: postId },
+            });
+            return { post, isLiked: false, message: '이미 좋아요가 취소된 상태입니다.' };
+          }
+  
+          // 좋아요 기록 삭제 + likes -1 (0 밑으로는 내려가지 않게)
+          await tx.post_likes.delete({
+            where: {
+              post_id_user_id: {
+                post_id: postId,
+                user_id,
+              },
+            },
+          });
+  
+          const updatedPost = await tx.community_posts.update({
+            where: { idx: postId },
+            data: {
+              likes: {
+                // 음수 방지
+                decrement: 1,
+              },
+            },
+          });
+  
+          // 혹시 DB likes 가 음수 되는 케이스가 걱정되면 한 번 더 보정해도 됨
+          const safePost =
+            (updatedPost.likes ?? 0) < 0
+              ? await tx.community_posts.update({
+                  where: { idx: postId },
+                  data: { likes: 0 },
+                })
+              : updatedPost;
+  
+          return { post: safePost, isLiked: false, message: '좋아요 취소 성공' };
+        }
+  
+        throw new Error('올바르지 않은 action 값입니다.');
+      });
+  
+      if (!result.post) {
+        return res.status(404).json({ message: '게시글을 찾을 수 없습니다.' });
+      }
+  
+      res.status(200).json({
+        message: result.message,
+        data: {
+          ...result.post,
+          isLiked: result.isLiked,
+        },
+      });
+    } catch (error: any) {
+      console.log(error);
+      res.status(500).json({ message: '좋아요 처리에 실패하였습니다', error: error.message || error });
+    }
+  };
+
 
 
 // 댓글 작성 후 댓글 수 증가 및 댓글 내용 초기화 및 댓글 작성 후 댓글 리스트에 추가
@@ -280,11 +472,123 @@ export const commentBoard = async (req: Request, res: Response) => {
 }
 
 
+// 댓글 삭제
+export const deleteComment = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const { commentId } = req.params;
+        if(!id || isNaN(Number(id))) {
+            return res.status(400).json({ message: '유효하지 않는 게시글 ID 입니다.' })
+        }
+
+        if(!commentId || isNaN(Number(commentId))) {
+            return res.status(400).json({ message: '유효하지 않는 댓글 ID 입니다.' })
+        }
+
+        const comment = await prisma.comments.findUnique({
+            where: {
+                idx: Number(commentId),
+            }
+        })
+        if(comment && comment.post_id !== Number(id)) {
+            return res.status(403).json({ message: '댓글 삭제 권한이 없습니다.' })
+        }
+        if(!comment) {
+            return res.status(404).json({ message: '댓글을 찾을 수 없습니다.' })
+        }
+
+        await prisma.comments.delete({
+            where: {
+                idx: Number(commentId),
+            }
+        })
+        res.status(200).json({ message: '댓글 삭제 성공' })
+
+    } catch (error:any) {
+        console.log(error);
+        res.status(500).json({ message: '댓글 삭제에 실패했습니다. 다시 시도해 주세요.', error: error.message })
+    }
+}
+
+
+// 게시글 수정 불러오기
+export const getBoardEdit = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+
+        // 유효성 검사
+        if(!id || isNaN(Number(id))) {
+            return res.status(400).json({ message: '유효하지 않은 게시글 ID 입니다.' })
+        }
+        // 게시글 조회
+        const post = await prisma.community_posts.findUnique({
+            where: {
+                idx: Number(id),
+            },
+        });
+        if(!post) {
+            return res.status(404).json({ message: '게시글을 찾을 수 없습니다.' })
+        }
+        // 카테고리 한글로 바꿔서 보내기
+        const mappedPost = {
+            ...post,
+            category: post.category ? categoryReverseMap[post.category] : null,
+        }
+        res.status(200).json({ message: '게시글 수정 불러오기 성공', data: mappedPost })
+    } catch (error:any) {
+        console.log(error);
+        res.status(500).json({ message: '게시글 수정 불러오기 실패:', error: error.message })
+    }
+}
 
 
 // 게시글 수정
 export const updateBoard = async (req: Request, res: Response) => {
     try {
+        const { id } = req.params;
+        const { title, content, tags, category, user_id } = req.body;
+        // 유효성 검사
+        if(!id || isNaN(Number(id))) {
+            return res.status(400).json({ message: '유효하지 않는 게시글 ID 입니다.' })
+        }
+
+        if(!title || !content) {
+            return res.status(400).json({ message: '제목 및 내용을 입력해 주세요.' })
+        }
+
+        if(!category) {
+            return res.status(400).json({ message: '카테고리를 선택해 주세요.' })
+        }
+
+        
+        if(!user_id) {
+            return res.status(400).json({ message: '로그인이 필요합니다.' })
+        }
+
+        const post = await prisma.community_posts.findUnique({
+            where: { idx: Number(id) },
+        })
+
+        if(!post) {
+            return res.status(404).json({ message: '게시글을 찾을 수 없습니다.' })
+        }
+        
+        if(post.user_id !== user_id) {
+            return res.status(403).json({ message: '게시글 수정 권한이 없습니다.' })
+        }
+
+        const normalizedCategory = categoryMap[category] || null;
+
+        const updatedPost = await prisma.community_posts.update({
+            where: { idx: Number(id) },
+            data: { title, content, category: normalizedCategory, tags: tags || null },
+        })
+
+        if(!updatedPost) {
+            return res.status(404).json({ message: '게시글을 찾을 수 없습니다.' })
+        }
+
+        res.status(200).json({ message: '게시글 수정 성공', data: updatedPost })
 
     } catch (error:any) {
         console.log(error);
@@ -295,6 +599,34 @@ export const updateBoard = async (req: Request, res: Response) => {
 // 게시글 삭제
 export const deleteBoard = async (req: Request, res: Response) => {
     try {
+        const { id } = req.params;
+        // const { user_id } = req.body;
+        if(!id || isNaN(Number(id))) {
+            return res.status(400).json({ message: '유효하지 않은 게시글 ID 입니다.' })
+        }
+
+        // if(!user_id) {
+        //     return res.status(400).json({ message: '로그인이 필요합니다.' })
+        // }
+
+        const post = await prisma.community_posts.findUnique({
+            where: { idx: Number(id) }, // id는 params로 url에 있는 것을 뜻한다 저 부분은 Number(id)로 숫자형으로 변환하였으며
+            // idx는 게시글 고유번호이며 그 부분과 id가 일치하는 게시글을 찾는다
+            // 또한 게시글 작성자와 삭제 권한이 있는 사용자가 일치하는 게시글을 찾는다
+            // 일반적인 mongodb에서 findOne과 동일한 기능 findUnique를 사용
+        })
+        if(!post) {
+            return res.status(404).json({ message: '게시글을 찾을 수 없습니다.' })
+        }
+
+        // if(post.user_id !== user_id) {
+        //     return res.status(403).json({ message: '게시글 삭제 권한이 없습니다.' })
+        // }
+        
+        await prisma.community_posts.delete({
+            where: { idx: Number(id) },
+        })
+        res.status(200).json({ message: '게시글 삭제 성공' })
 
     } catch (error:any) {
         console.log(error);
