@@ -21,6 +21,7 @@
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
     "multer-s3": "^3.0.1",
     "nodemailer": "^7.0.10",
@@ -33,6 +34,7 @@
     "typescript": "^5.9.3"
   },
   "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "prisma": "^6.19.0"
   }
