@@ -178,6 +178,20 @@ model regions {
   use_yn       regions_use_yn? @default(Y)
 }
 
+model regions {
+  idx          Int             @id @default(autoincrement())
+  code         String?         @db.VarChar(50)
+  city         String?         @db.VarChar(50)
+  district     String?         @db.VarChar(50)
+  subdistrict  String?         @db.VarChar(50)
+  neighborhood String?         @db.VarChar(50)
+  lat          Float?
+  lng          Float?
+  created_at   DateTime?       @db.DateTime(0)
+  updated_at   DateTime?       @db.DateTime(0)
+  use_yn       regions_use_yn? @default(Y)
+}
+
 enum community_posts_category {
   INFO_SHARE @map("정보공유")
   QUESTION   @map("질문")

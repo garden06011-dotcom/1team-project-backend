@@ -29,6 +29,10 @@ app.use('/', BoardRouter);
 app.use('/api/map', MapRouter);
 app.use('/api/chat', ChatRouter);
 
+<<<<<<< HEAD
+
+=======
+>>>>>>> 8acf02a3c24c526c050051c8b928dd868422f7f0
 
 app.get('/', (req: Request, res: Response) => {
   res.send('Hello, TypeScript with Express!');
