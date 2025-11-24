@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '../generated/prisma/client';
-import { generateToeknPair, verifyRefreshToken, generateAccessToken } from '../utils/JwtUtils';
+import { generateToeknPair, verifyRefreshToken, generateAccessToken, hashRefreshToken } from '../utils/JwtUtils';
 
 const bcrypt = require('bcrypt');
 require('dotenv').config();
@@ -129,17 +129,58 @@ export const login = async (req: Request, res: Response) => {
         // 사용자 타입 결정 (role이 없으면 'member'로 기본값 설정)
         const userType = (user.role as 'guest' | 'member' | 'admin') || 'member';
 
-        // JWT 토큰 생성
-        // const token = generateToken({
-        //     userId: user.user_id,
-        //     email: user.user_id,
-        //     role: user.role || 'member',
-
+        // ===== 기존 코드 (활성화) =====
         // JWT 토큰 쌍 생성 (Access Token + Refresh Token)
         const tokenPair = generateToeknPair({
             id: user.idx,
             type: userType,
         });
+
+        // ===== DB 저장 코드 (활성화) =====
+        // Refresh Token을 해시화 (DB에 평문 저장 금지)
+        const refreshTokenHash = hashRefreshToken(tokenPair.refreshToken);
+
+        // ===== 해시 확인용 (개발/테스트 목적) =====
+        console.log('=== Refresh Token 해시 확인 ===');
+        console.log('원본 Refresh Token (평문):', tokenPair.refreshToken);
+        console.log('해시화된 Refresh Token:', refreshTokenHash);
+        console.log('================================');
+        // ===== 해시 확인용 끝 =====
+
+        // Refresh Token 만료 시간 계산 (7일 후)
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 7);
+
+        // 기기 정보 추출 (선택사항 - User-Agent에서)
+        const deviceInfo = req.headers['user-agent'] || 'Unknown';
+
+        // IP 주소 추출 (선택사항)
+        const ipAddress = req.ip || req.socket.remoteAddress || 'Unknown';
+
+        // 기존 Refresh Token이 있으면 무효화 (선택사항 - 여러 기기 지원 시 주석 처리)
+        await prisma.refresh_tokens.updateMany({
+            where: {
+                user_id: user.idx,
+                is_revoked: false,
+            },
+            data: {
+                is_revoked: true,
+            },
+        });
+
+        // Refresh Token을 DB에 저장
+        await prisma.refresh_tokens.create({
+            data: {
+                user_id: user.idx,
+                token_hash: refreshTokenHash,
+                expires_at: expiresAt,
+                device_info: deviceInfo,
+                ip_address: ipAddress,
+                is_revoked: false,
+                created_at: new Date(),
+            },
+        });
+        // ===== DB 저장 코드 끝 =====
 
         // 프론트엔드 authStore 형식에 맞춰서 응답 (토큰을 응답 본문에 포함)
         return res.status(200).json({ 
@@ -155,6 +196,7 @@ export const login = async (req: Request, res: Response) => {
             accessTokenExpiresIn: tokenPair.accessTokenExpiresIn,
             refreshTokenExpiresIn: tokenPair.refreshTokenExpiresIn,
         })
+        // ===== 기존 코드 끝 =====
 
 
     } catch (error:any) {
@@ -174,46 +216,157 @@ export const refreshAccessToken = async (req: Request, res: Response) => {
             return res.status(400).json({ message: 'Refresh Token이 필요합니다.' });
         }
 
-        // Refresh Token 검증
+        // ===== 기존 코드 (주석 처리) =====
+        // // Refresh Token 검증
+        // try {
+        //     const decoded = verifyRefreshToken(refreshToken);
+        //
+        //     // DB에서 사용자 확인 (선택사항 - 토큰이 유효한지 추가 확인)
+        //     const user = await prisma.users.findUnique({
+        //         where: {
+        //             idx: decoded.id
+        //         }
+        //     });
+        //
+        //     if (!user) {
+        //         return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
+        //     }
+        //
+        //     // 사용자 타입 결정
+        //     const userType = (user.role as 'guest' | 'member' | 'admin') || 'member';
+        //
+        //     // 새 Access Token 생성
+        //     const newAccessToken = generateAccessToken({
+        //         id: decoded.id,
+        //         type: userType,
+        //     });
+        //
+        //     return res.status(200).json({
+        //         message: 'Access Token 갱신 성공',
+        //         accessToken: newAccessToken,
+        //     });
+        //
+        // } catch (error) {
+        //     // Refresh Token이 유효하지 않거나 만료된 경우
+        //     return res.status(401).json({ 
+        //         message: '유효하지 않거나 만료된 Refresh Token입니다.',
+        //         error: error instanceof Error ? error.message : 'Token verification failed'
+        //     });
+        // }
+        // ===== 기존 코드 끝 =====
+
+        // ===== DB 검증 코드 (활성화) =====
+        // 1단계: JWT 서명 검증 (토큰이 유효한 형식인지 확인)
+        let decoded;
         try {
-            const decoded = verifyRefreshToken(refreshToken);
-
-            // DB에서 사용자 확인 (선택사항 - 토큰이 유효한지 추가 확인)
-            const user = await prisma.users.findUnique({
-                where: {
-                    idx: decoded.id
-                }
-            });
-
-            if (!user) {
-                return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
-            }
-
-            // 사용자 타입 결정
-            const userType = (user.role as 'guest' | 'member' | 'admin') || 'member';
-
-            // 새 Access Token 생성
-            const newAccessToken = generateAccessToken({
-                id: decoded.id,
-                type: userType,
-            });
-
-            return res.status(200).json({
-                message: 'Access Token 갱신 성공',
-                accessToken: newAccessToken,
-            });
-
+            decoded = verifyRefreshToken(refreshToken);
         } catch (error) {
-            // Refresh Token이 유효하지 않거나 만료된 경우
             return res.status(401).json({ 
                 message: '유효하지 않거나 만료된 Refresh Token입니다.',
                 error: error instanceof Error ? error.message : 'Token verification failed'
             });
         }
 
+        // 2단계: Refresh Token을 해시화
+        const refreshTokenHash = hashRefreshToken(refreshToken);
+
+        // 3단계: DB에서 Refresh Token 검색
+        const storedToken = await prisma.refresh_tokens.findFirst({
+            where: {
+                user_id: decoded.id,
+                token_hash: refreshTokenHash,
+                is_revoked: false,
+                expires_at: { gt: new Date() },
+            },
+            include: { users: true },
+        });
+
+        // 4단계: DB에 토큰이 없거나 무효화된 경우
+        if (!storedToken || !storedToken.users) {
+            return res.status(401).json({ 
+                message: '유효하지 않거나 만료된 Refresh Token입니다.',
+                error: 'Token not found in database or revoked'
+            });
+        }
+
+        // 5단계: 사용자 정보 확인
+        const user = storedToken.users;
+        const userType = (user.role as 'guest' | 'member' | 'admin') || 'member';
+
+        // 6단계: 새 Access Token 생성
+        const newAccessToken = generateAccessToken({
+            id: decoded.id,
+            type: userType,
+        });
+
+        // 7단계: 마지막 사용 시간 업데이트
+        await prisma.refresh_tokens.update({
+            where: { id: storedToken.id },
+            data: { last_used_at: new Date() },
+        });
+
+        // 8단계: 새 Access Token 반환
+        return res.status(200).json({
+            message: 'Access Token 갱신 성공',
+            accessToken: newAccessToken,
+        });
+        // ===== DB 검증 코드 끝 =====
+
     } catch (error: any) {
         console.log(error);
         res.status(500).json({ message: '토큰 갱신 오류:', error })
+    }
+}
+
+// 로그아웃 - Refresh Token 무효화 (DB 저장 기능 사용 시 활성화)
+export const logout = async (req: Request, res: Response) => {
+    try {
+        // 요청 본문에서 Refresh Token 가져오기 (선택사항)
+        const { refreshToken } = req.body;
+
+        // Refresh Token이 제공된 경우 해당 토큰만 무효화
+        if (refreshToken) {
+            const refreshTokenHash = hashRefreshToken(refreshToken);
+            
+            await prisma.refresh_tokens.updateMany({
+                where: {
+                    token_hash: refreshTokenHash,
+                    is_revoked: false,
+                },
+                data: {
+                    is_revoked: true,
+                },
+            });
+        } else {
+            // Refresh Token이 없으면 모든 토큰 무효화 (보안상 안전)
+            const { user_id } = req.body;
+            
+            if (user_id) {
+                const user = await prisma.users.findUnique({
+                    where: { user_id: user_id },
+                });
+
+                if (user) {
+                    await prisma.refresh_tokens.updateMany({
+                        where: {
+                            user_id: user.idx,
+                            is_revoked: false,
+                        },
+                        data: {
+                            is_revoked: true,
+                        },
+                    });
+                }
+            }
+        }
+
+        return res.status(200).json({
+            message: '로그아웃 성공',
+        });
+
+    } catch (error: any) {
+        console.log(error);
+        res.status(500).json({ message: '로그아웃 오류:', error });
     }
 }
 
