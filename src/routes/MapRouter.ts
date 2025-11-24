@@ -1,10 +1,10 @@
 import { Router } from 'express';
-import {custom_request, getLocationDate, getLocationCenter}  from '../controllers/MapController';
+import {user_request_save, getLocationDate, getLocationCenter}  from '../controllers/MapController';
 
 
 const router = Router();
 
-router.post('/save', custom_request);
+router.post('/save', user_request_save);
 router.get('/location', getLocationDate);
 router.post('/location-center', getLocationCenter);
 

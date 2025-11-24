@@ -62,8 +62,7 @@ model community_posts {
   updated_at     DateTime?                 @db.DateTime(0)
   comments       comments[]
   users          users?                    @relation(fields: [user_id], references: [user_id], onDelete: Restrict, onUpdate: Restrict, map: "community_posts_ibfk_1")
-
-  post_likes      post_likes[]
+  post_likes     post_likes[]
 
   @@index([user_id], map: "user_id")
 }
@@ -144,8 +143,8 @@ model users {
   community_posts     community_posts[]
   email_verifications email_verifications[]
   notifications       notifications[]
-
   post_likes          post_likes[]
+  refresh_tokens      refresh_tokens[]
 }
 
 model post_likes {
@@ -153,15 +152,13 @@ model post_likes {
   post_id    Int
   user_id    String          @db.VarChar(50)
   created_at DateTime?       @db.DateTime(0)
-
-  post       community_posts @relation(fields: [post_id], references: [idx], onDelete: Restrict, onUpdate: Restrict)
-  users      users           @relation(fields: [user_id], references: [user_id], onDelete: Restrict, onUpdate: Restrict)
+  post       community_posts @relation(fields: [post_id], references: [idx], onUpdate: Restrict, map: "fk_post_likes_post")
+  users      users           @relation(fields: [user_id], references: [user_id], onUpdate: Restrict, map: "fk_post_likes_user")
 
   @@unique([post_id, user_id], map: "uniq_post_user")
-  @@index([post_id], map: "post_id")
-  @@index([user_id], map: "user_id")
+  @@index([post_id], map: "post_id_idx")
+  @@index([user_id], map: "user_id_idx")
 }
-
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model regions {
@@ -169,13 +166,29 @@ model regions {
   code         String?         @db.VarChar(50)
   city         String?         @db.VarChar(50)
   district     String?         @db.VarChar(50)
-  subdistrict  String?         @db.VarChar(50)
   neighborhood String?         @db.VarChar(50)
   lat          Float?
   lng          Float?
   created_at   DateTime?       @db.DateTime(0)
   updated_at   DateTime?       @db.DateTime(0)
   use_yn       regions_use_yn? @default(Y)
+}
+
+model refresh_tokens {
+  id           Int       @id @default(autoincrement())
+  user_id      Int
+  token_hash   String    @db.VarChar(255)
+  expires_at   DateTime  @db.DateTime(0)
+  created_at   DateTime? @default(now()) @db.DateTime(0)
+  device_info  String?   @db.VarChar(255)
+  ip_address   String?   @db.VarChar(45)
+  is_revoked   Boolean?  @default(false)
+  last_used_at DateTime? @db.DateTime(0)
+  users        users     @relation(fields: [user_id], references: [idx], onDelete: Cascade, onUpdate: Restrict, map: "refresh_tokens_ibfk_1")
+
+  @@index([expires_at], map: "idx_expires_at")
+  @@index([token_hash], map: "idx_token_hash")
+  @@index([user_id], map: "idx_user_id")
 }
 
 enum community_posts_category {

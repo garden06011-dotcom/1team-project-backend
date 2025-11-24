@@ -22,7 +22,6 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-
 app.use('/user', UserRouter);
 app.use('/api', EmailRouter);
 app.use('/', BoardRouter);

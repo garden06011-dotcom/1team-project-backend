@@ -4,10 +4,10 @@ import { PrismaClient } from '../generated/prisma/client';
 const prisma = new PrismaClient();
 
 // 사용자가 원하는 입지 요청값 저장
- export const custom_request = async (req: Request, res: Response) => {
+ export const user_request_save = async (req: Request, res: Response) => {
     try {
-        const {user_id, category, rent_range, region_city, region_district, region_subdistrict } = req.body;
-        if(!user_id || !category || !rent_range || !region_city || !region_district || !region_subdistrict) {
+        const {user_id, category, rent_range, region_city, region_district} = req.body;
+        if(!user_id || !category || !rent_range || !region_city || !region_district) {
             return res.status(400).json({ message: '모든 입력 필드를 채워주세요.' })
         }
 
@@ -18,7 +18,6 @@ const prisma = new PrismaClient();
                 rent_range: String(rent_range),
                 region_city: String(region_city),           
                 region_district: String(region_district),   
-                region_subdistrict: String(region_subdistrict), 
                 created_at: new Date(new Date().getTime() + 9 * 60 * 60 * 1000)
               }
           });
@@ -34,79 +33,90 @@ const prisma = new PrismaClient();
 
  // 창업 위치 데이터 가져오기
 export const getLocationDate = async (req: Request, res: Response) => {
-    try {
-      const regions = await prisma.regions.findMany({
-        where: { city: "서울", use_yn: 'Y' }, // 서울만 가져오기
-        orderBy: [
-          { city: 'asc' },
-          { district: 'asc' },
-          { subdistrict: 'asc' },
-        ],
-      });
-      
-      const formatted: any = {};
-      regions.forEach((region: any) => {
-        if (!formatted[region.city]) formatted[region.city] = {};
-        if (!formatted[region.city][region.district]) {
-          formatted[region.city][region.district] = [];
-        }
-        formatted[region.city][region.district].push(region.subdistrict);
-      });
+  try {
+    console.log("@@@ getLocationDate", req.body);
+    const regions = await prisma.regions.findMany({
+      where: { use_yn: 'Y' },
+      orderBy: [
+        { city: 'asc' },
+        { district: 'asc' },
+      ],
+    });
+
+    const formatted: any = {};
+    regions.forEach((region: any) => {
+      if (!formatted[region.city]) formatted[region.city] = [];
+      if (!formatted[region.city].includes(region.district)) {
+        formatted[region.city].push(region.district);
+      }
+    });
+
+    // 서울, 부산 상단 정렬
+    const priorityRegions = ['서울', '부산'];
+    const sorted = Object.keys(formatted).sort((a, b) => {
+      const indexA = priorityRegions.indexOf(a);
+      const indexB = priorityRegions.indexOf(b);
+      if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+      if (indexA !== -1) return -1;
+      if (indexB !== -1) return 1;
+      return a.localeCompare(b);
+    });
+
+    const reordered: any = {};
+    sorted.forEach(city => {
+      reordered[city] = formatted[city];
+    });
+
+    res.json(reordered);
+
+  } catch (error: any) {
+    console.log(error);
+    res.status(500).json({ message: "창업 위치 데이터 가져오기 오류", error });
+  }
+};
+
   
-      res.json(formatted); // 예: { 서울: { 강남구: ["역삼동", ...], ... } }
-    } catch (error: any) {
-      console.log(error);
-      res.status(500).json({ message: "창업 위치 데이터 가져오기 오류", error });
-    }
-  };
-  
- // 창업 위치 중심좌표 가져오기
+// 창업 위치 중심좌표 가져오기
 export const getLocationCenter = async (req: Request, res: Response) => {
-    try {
-      console.log("@@@ getLocationCenter", req.body);
-      const { city, district, subdistrict } = req.body;
-  
-      if (!city) {
-        return res.status(400).json({ message: "city 값은 필수입니다." });
-      }
-  
-      // 서울 이외 지역 좌표 매핑
-      const fixedCenters: any = {
-            "경기":  { lat: 37.263574, lng: 127.028601 },
-            "인천":  { lat: 37.4562557, lng: 126.7052062 },
-            "부산":  { lat: 35.172784561228, lng: 129.05284004337 },
-            "대구":  { lat: 35.8706718037181, lng: 128.597094576837 },
-            "광주":  { lat: 35.157878146258, lng: 126.865060134513 },
-            "대전":  { lat: 36.3197490445653, lng: 127.431037175935 },
-            "울산":  { lat: 35.5444169723478, lng: 129.331864527423 },
-          
-      };
-      
-  
-      // 서울이면 기존 DB 조회
-      if (city === "서울") {
-        if (!district || !subdistrict) {
-          return res.status(400).json({ message: "서울은 구/동 입력이 필요합니다." });
-        }
-  
-        const location = await prisma.regions.findFirst({
-          where: { district, subdistrict },
-          select: { lat: true, lng: true },
-        });
-  
-        return res.json(location);
-      }
-  
-      // 서울 외 지역 처리
-      if (fixedCenters[city]) {
-        return res.json(fixedCenters[city]);
-      }
-  
-      return res.status(400).json({ message: "지원되지 않는 지역입니다." });
-  
-    } catch (error: any) {
-      console.log(error);
-      res.status(500).json({ message: "창업 위치 중심좌표 가져오기 오류", error });
+  try {
+    console.log("@@@ getLocationCenter", req.body);
+    const { city, district } = req.body;
+
+    // city 필수
+    if (!city) {
+      return res.status(400).json({ message: "city 값은 필수입니다." });
     }
-  };
+
+    // district도 반드시 있어야 함
+    if (!district) {
+      return res.status(400).json({ message: "district(구) 값은 필수입니다." });
+    }
+
+    // DB에서 시/구 기준으로 조회 (동은 무시)
+    const location = await prisma.regions.findFirst({
+      where: {
+        city,
+        district,
+        use_yn: "Y",
+      },
+      select: {
+        lat: true,
+        lng: true,
+      },
+    });
+
+    if (!location) {
+      return res.status(404).json({ message: "해당 지역의 위치 정보를 찾을 수 없습니다." });
+    }
+
+    return res.json(location);
+
+  } catch (error: any) {
+    console.error(error);
+    res.status(500).json({ message: "창업 위치 중심좌표 가져오기 오류", error });
+  }
+};
+
+
+
   
