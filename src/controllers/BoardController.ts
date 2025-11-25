@@ -145,6 +145,8 @@ export const getBoardDetail = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
         const { user_id } = req.query;
+        const commentPageParam = parseInt(req.query.commentPage as string, 10);
+        const commentLimitParam = parseInt(req.query.commentLimit as string, 10);
 
         if (!id || isNaN(Number(id))) {
             return res.status(400).json({ message: '유효하지 않은 게시글 ID 입니다.' });
@@ -154,23 +156,23 @@ export const getBoardDetail = async (req: Request, res: Response) => {
             where: {
                 idx: Number(id),
             },
-            include: {
-                users: true,
-                comments: {
-                    include: {
-                        users: true,
-                    },
-                    orderBy: {
-                        created_at: 'desc',
-                    },
-                },
-            },
         });
 
         if (!post) {
             return res.status(404).json({ message: '게시글을 찾을 수 없습니다.' });
         }
 
+        const commentPage = Number.isNaN(commentPageParam) || commentPageParam < 1 ? 1 : commentPageParam;
+        const commentLimit = Number.isNaN(commentLimitParam) || commentLimitParam < 1 ? 5 : commentLimitParam;
+
+        const totalCommentCount = await prisma.comments.count({
+            where: {
+                post_id: Number(id),
+            },
+        });
+        const totalCommentPages = Math.max(1, Math.ceil(totalCommentCount / commentLimit));
+        const safeCommentPage = Math.min(commentPage, totalCommentPages);
+        const commentSkip = (safeCommentPage - 1) * commentLimit;
 
         let isLiked = false;
         if(user_id && typeof user_id === 'string') {
@@ -186,35 +188,51 @@ export const getBoardDetail = async (req: Request, res: Response) => {
             isLiked = !!likeRecord;
         }
 
-        // 조회수 증가 (GET 요청이므로 항상 +1)
-        // update에 include를 추가하여 한 번의 쿼리로 조회수 증가 + 관련 데이터 조회를 동시에 처리
-        // 이렇게 하면 findUnique를 다시 호출할 필요가 없어 중복 조회를 방지할 수 있습니다
-        const updatedPost = await prisma.community_posts.update({
-            where: { idx: Number(id) },
-            data: {
-                views: (post.views ?? 0) + 1, // 현재 조회수에서 +1 증가
-            },
-            include: {
-                users: true,
-                comments: {
-                    include: {
-                        users: true,
-                    },
-                    orderBy: {
-                        created_at: 'desc',
-                    },
+        const [updatedPost, comments] = await Promise.all([
+            prisma.community_posts.update({
+                where: { idx: Number(id) },
+                data: {
+                    views: (post.views ?? 0) + 1,
                 },
-            },
-        });
+                include: {
+                    users: true,
+                },
+            }),
+            prisma.comments.findMany({
+                where: {
+                    post_id: Number(id),
+                },
+                include: {
+                    users: true,
+                },
+                orderBy: {
+                    created_at: 'desc',
+                },
+                skip: commentSkip,
+                take: commentLimit,
+            })
+        ]);
 
         // 카테고리 한글로 바꿔서 보내기 (증가된 views 포함)
         const mappedPost = {
             ...updatedPost,
             category: updatedPost.category ? categoryReverseMap[updatedPost.category] : null,
             isLiked,
+            comments,
         };
 
-        res.status(200).json({ message: '게시글 조회 성공', data: mappedPost });
+        res.status(200).json({
+            message: '게시글 조회 성공',
+            data: mappedPost,
+            commentPagination: {
+                totalCount: totalCommentCount,
+                totalPages: totalCommentPages,
+                currentPage: safeCommentPage,
+                pageSize: commentLimit,
+                hasPrev: safeCommentPage > 1,
+                hasNext: safeCommentPage < totalCommentPages,
+            },
+        });
 
     } catch (error:any) {
         console.log(error);
@@ -226,31 +244,57 @@ export const getBoardDetail = async (req: Request, res: Response) => {
 export const getUserBoards = async (req: Request, res: Response) => {
     try {
         const { userId } = req.params;
+        const pageParam = parseInt(req.query.page as string, 10);
+        const limitParam = parseInt(req.query.limit as string, 10);
 
         if (!userId) {
             return res.status(400).json({ message: '유효하지 않은 사용자 ID 입니다.' });
         }
 
-        const posts = await prisma.community_posts.findMany({
-            where: {
-                user_id: userId,
-            },
-            include: {
-                users: true,
-            },
-            orderBy: {
-                created_at: 'desc',
-            },
-        });
+        const page = Number.isNaN(pageParam) || pageParam < 1 ? 1 : pageParam;
+        const limit = Number.isNaN(limitParam) || limitParam < 1 ? 5 : limitParam;
+        const skip = (page - 1) * limit;
+
+        const [totalCount, posts] = await Promise.all([
+            prisma.community_posts.count({
+                where: {
+                    user_id: userId,
+                },
+            }),
+            prisma.community_posts.findMany({
+                where: {
+                    user_id: userId,
+                },
+                include: {
+                    users: true,
+                },
+                orderBy: {
+                    created_at: 'desc',
+                },
+                skip,
+                take: limit,
+            }),
+        ]);
 
         const mappedPosts = posts.map((post) => ({
             ...post,
             category: post.category ? categoryReverseMap[post.category] : null,
         }));
 
-        
+        const totalPages = Math.max(1, Math.ceil(totalCount / limit));
 
-        res.status(200).json({ message: '사용자 게시글 조회 성공', data: mappedPosts });
+        res.status(200).json({
+            message: '사용자 게시글 조회 성공',
+            data: mappedPosts,
+            pagination: {
+                totalCount,
+                totalPages,
+                currentPage: Math.min(page, totalPages),
+                pageSize: limit,
+                hasPrev: page > 1,
+                hasNext: page < totalPages,
+            },
+        });
     } catch (error:any) {
         console.log(error);
         res.status(500).json({ message: '사용자 게시글을 불러오지 못했습니다.', error })

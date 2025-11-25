@@ -119,6 +119,10 @@ export const login = async (req: Request, res: Response) => {
             return res.status(400).json({ message: '가입되지 않은 회원입니다.' })
         }
 
+        if(user.use_yn !== 'Y') {
+            return res.status(403).json({ message: '비활성화된 계정입니다. 관리자에게 문의하세요.' })
+        }
+
         // 비밀번호 일치 여부 확인
         // compare 함수에서 첫자리는 비밀번호 원본 즉 유저가 친 비밀번호, 두번째 자리는 DB에 저장된 비밀번호
         const isPasswordValid = await bcrypt.compare(password, user.password); 
@@ -367,6 +371,45 @@ export const logout = async (req: Request, res: Response) => {
     } catch (error: any) {
         console.log(error);
         res.status(500).json({ message: '로그아웃 오류:', error });
+    }
+}
+
+export const deactivateAccount = async (req: Request, res: Response) => {
+    try {
+        if (!req.user) {
+            return res.status(401).json({ message: '인증 정보가 필요합니다.' });
+        }
+
+        const user = await prisma.users.findUnique({
+            where: { idx: req.user.id },
+            select: { use_yn: true },
+        });
+
+        if (!user) {
+            return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
+        }
+
+        if (user.use_yn === 'N') {
+            return res.status(200).json({ message: '이미 비활성화된 계정입니다.' });
+        }
+
+        await prisma.users.update({
+            where: { idx: req.user.id },
+            data: {
+                use_yn: 'N',
+                updated_at: new Date(),
+            },
+        });
+
+        await prisma.refresh_tokens.updateMany({
+            where: { user_id: req.user.id, is_revoked: false },
+            data: { is_revoked: true },
+        });
+
+        return res.status(200).json({ message: '계정이 비활성화되었습니다.' });
+    } catch (error:any) {
+        console.log(error);
+        res.status(500).json({ message: '계정 비활성화에 실패했습니다.', error });
     }
 }
 
