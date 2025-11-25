@@ -4,6 +4,7 @@ import EmailRouter from './routes/EmailRouter';
 import BoardRouter from './routes/BoardRouter';
 import MapRouter from './routes/MapRouter';
 import ChatRouter from './routes/ChatRouter';
+import AdminRouter from './routes/AdminRouter';
 import cors from 'cors'; //cors 라이브러리를 사용하여 크로스 도메인 정책을 설정하기 위함
 
 //아래의 2줄을 추가 하세요.
@@ -27,6 +28,7 @@ app.use('/api', EmailRouter);
 app.use('/', BoardRouter);
 app.use('/api/map', MapRouter);
 app.use('/api/chat', ChatRouter);
+app.use('/', AdminRouter);
 
 
 app.get('/', (req: Request, res: Response) => {

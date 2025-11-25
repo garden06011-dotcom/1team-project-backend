@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { signup, myPage, findPasswordReset, login, refreshAccessToken, logout } from '../controllers/UserController';
+import { signup, myPage, findPasswordReset, login, refreshAccessToken, logout, deactivateAccount } from '../controllers/UserController';
 // import AuthJWT from '../middleware/AuthJWT';
 import { authenticateToken } from '../middleware/AuthJWT';
 
@@ -16,5 +16,7 @@ router.post('/refresh', refreshAccessToken);
 router.post('/logout', logout); // DB 저장 기능 활성화
 
 router.get('/mypage', authenticateToken, myPage);
+
+router.post('/withdraw', authenticateToken, deactivateAccount);
 
 export default router;
