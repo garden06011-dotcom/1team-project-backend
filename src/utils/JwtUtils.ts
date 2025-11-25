@@ -1,8 +1,9 @@
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto'); // 토큰 해싱을 위해 추가
 require('dotenv').config();
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'your-refresh-secret-key-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
 
 // 토큰 만료 시간 설정
 const ACCESS_TOKEN_EXPIRES_IN = '5m'; // 15분
@@ -85,4 +86,31 @@ export const generateToeknPair = (payload: TokenPayload) => {
         accessTokenExpiresIn: ACCESS_TOKEN_EXPIRES_IN,
         refreshTokenExpiresIn: REFRESH_TOKEN_EXPIRES_IN,
     };
+}
+
+/**
+ * Refresh Token을 해시화하는 함수
+ * 
+ * 왜 해시화하는가?
+ * - DB에 평문으로 저장하면 보안 위험
+ * - DB가 탈취되어도 원본 토큰을 알 수 없음
+ * - 검증 시 해시를 비교하여 일치 여부 확인
+ * 
+ * 기존: Refresh Token을 그대로 localStorage에 저장 (평문)
+ * 변경: Refresh Token을 해시화해서 DB에 저장
+ */
+export const hashRefreshToken = (token: string): string => {
+    // SHA-256 해시 사용 (bcrypt보다 빠르고 토큰 검증에 적합)
+    return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+/**
+ * Refresh Token 검증 (해시 비교)
+ * 
+ * 기존: JWT 서명만 검증
+ * 변경: JWT 서명 검증 + DB에서 해시 비교
+ */
+export const verifyRefreshTokenHash = (token: string, hashedToken: string): boolean => {
+    const tokenHash = hashRefreshToken(token);
+    return tokenHash === hashedToken;
 }

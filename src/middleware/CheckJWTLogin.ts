@@ -1,6 +1,16 @@
 import { NextFunction, Request, Response } from 'express';
 import { verifyAccessToken } from '../utils/JwtUtils';
 
+// Express Request 타입 확장
+declare module 'express-serve-static-core' {
+  interface Request {
+    user?: {
+      id: number;
+      type: 'guest' | 'member' | 'admin';
+    };
+  }
+}
+
 /**
  * JWT 토큰 검증 미들웨어 (선택적 인증)
  * 

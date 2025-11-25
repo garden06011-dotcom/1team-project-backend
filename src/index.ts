@@ -28,6 +28,7 @@ app.use('/', BoardRouter);
 app.use('/api/map', MapRouter);
 app.use('/api/chat', ChatRouter);
 
+
 app.get('/', (req: Request, res: Response) => {
   res.send('Hello, TypeScript with Express!');
 });

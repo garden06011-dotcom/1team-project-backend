@@ -75,11 +75,63 @@ export const getLocationDate = async (req: Request, res: Response) => {
   }
 };
 
-  
-// 창업 위치 중심좌표 가져오기
+// 창업 위치 행정동 선택 
+import fs from "fs";
+import path from "path";
+
+let emdData: any = null;
+
+// 서버 시작 시 파일 한 번만 메모리에 로드
+(function loadEmdData() {
+  const filePath = path.join(__dirname, "../res/data/seoulDong_polygon.json");
+  emdData = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+  console.log("EMD 폴리곤 데이터 메모리 적재 완료:", emdData.features.length, "개");
+})();
+
+export const getDongPolygon = async (req: Request, res: Response) => {
+  try {
+    console.log("@@@ getDongPolygon", req.body);
+    const { district, dong } = req.body; // 예: "은평구", "불광동"
+
+    if (!district || !dong) {
+      return res.status(400).json({ message: "district와 dong은 필수입니다." });
+    }
+
+    const normalizedDistrict = district.replace("구", "").trim(); // "종로"
+    const normalizedDong = dong.replace("동", "").trim();         // "사직"
+    
+    const target = emdData.features.find((f: any) => {
+      const fullName = f.properties.adm_nm || "";
+      const noCity = fullName
+        .replace("서울특별시", "")
+        .replace("광역시", "")
+        .replace("특별시", "")
+        .trim(); // "종로구 사직동"
+    
+      return noCity.includes(normalizedDistrict) && noCity.includes(normalizedDong);
+    });
+
+
+    if (!target) {
+      return res
+        .status(404)
+        .json({ message: `${district} ${dong} 폴리곤 데이터 없음` });
+    }
+
+    return res.status(200).json({
+      type: target.geometry.type,
+      coordinates: target.geometry.coordinates,
+      properties: target.properties,
+    });
+  } catch (error) {
+    console.error("폴리곤 조회 오류:", error);
+    res.status(500).json({ message: "서버 오류", error });
+  }
+};
+
+// 창업 위치 중심좌표 가져오기 > 시설 모달에서 사용 예정
 export const getLocationCenter = async (req: Request, res: Response) => {
   try {
-    console.log("@@@ getLocationCenter", req.body);
     const { city, district } = req.body;
 
     // city 필수
@@ -117,6 +169,85 @@ export const getLocationCenter = async (req: Request, res: Response) => {
   }
 };
 
+// 구 단위 모든 행정동 폴리곤 반환
+export const getDistrictPolygons = async (req: Request, res: Response) => {
+  try {
+    console.log("@@@ getDistrictPolygons", req.body);
+    const { city, district } = req.body;
+
+    if (!city || !district) {
+      return res.status(400).json({ message: "city 와 district는 필수입니다." });
+    }
+
+    if (!emdData || !emdData.features) {
+      return res.status(500).json({ message: "폴리곤 데이터가 로드되지 않았습니다." });
+    }
+
+    // adm_nm 사용
+    const matchedDongs = emdData.features.filter(
+      (f: any) => f.properties.adm_nm.includes(district)
+    );
+    if (!matchedDongs.length) {
+      return res.status(404).json({ message: `${district} 내 행정동 데이터 없음` });
+    }
+
+    const formatted = matchedDongs.map((data: any) => ({
+      dong: data.properties.adm_nm.replace(/^.*\s/, ''), // 마지막 단어만 ("사직동")
+      fullName: data.properties.adm_nm,
+      coordinates: data.geometry.coordinates,
+    }));
+    return res.status(200).json({ district, dongs: formatted });
+  } catch (error: any) {
+    console.error("구 단위 폴리곤 조회 오류:", error.message);
+    return res.status(500).json({ message: "서버 오류", error: error.message });
+  }
+};
+
+// 유동인구 데이터 가져오기
+let populationData: any = null;
+
+// 서버 시작 시 파일 한 번만 메모리에 로드
+(function loadPopulationData() {
+  try {
+    const filePath = path.join(__dirname, "../res/data/population_data.json");
+    populationData = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    console.log("유동인구 데이터 메모리 적재 완료");
+  } catch (error) {
+    console.error("유동인구 데이터 로드 실패:", error);
+  }
+})();
+
+export const getPopulationData = async (req: Request, res: Response) => {
+  try {
+    const { dongName } = req.body;
+    console.log("@@@ getPopulationData dongName", dongName);
+    console.log("@@@ getPopulationData", req.body);
+    if (!dongName) {
+      return res.status(400).json({ message: "dongName은 필수입니다." });
+    }
+
+    if (!populationData || !populationData.data) {
+      return res.status(500).json({ message: "유동인구 데이터가 로드되지 않았습니다." });
+    }
+
+    // 동 이름 정규화 (동이 없으면 추가)
+    const normalizedDong = dongName.endsWith('동') ? dongName.trim() : `${dongName.trim()}동`;
+    console.log("@@@ normalizedDong", normalizedDong);
+    const dongData = populationData.data[normalizedDong];
+    console.log("@@@ dongData", dongData);
+    if (!dongData) {
+      return res.status(404).json({ 
+        message: `${normalizedDong} 유동인구 데이터를 찾을 수 없습니다.`,
+        availableDongs: Object.keys(populationData.data).slice(0, 10) 
+      });
+    }
+
+    return res.status(200).json(dongData);
+  } catch (error: any) {
+    console.error("유동인구 데이터 조회 오류:", error);
+    return res.status(500).json({ message: "서버 오류", error: error.message });
+  }
+};
 
 
   
