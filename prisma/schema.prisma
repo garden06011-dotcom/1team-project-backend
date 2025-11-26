@@ -17,6 +17,7 @@ model analysis_requests {
   region_district    String?                   @db.VarChar(50)
   region_subdistrict String?                   @db.VarChar(50)
   status             analysis_requests_status? @default(pending)
+  count              Int?
   created_at         DateTime?                 @db.DateTime(0)
   recommendations    recommendations[]
 
@@ -95,13 +96,13 @@ model facilities {
 }
 
 model notifications {
-  idx        Int                 @id @default(autoincrement())
-  user_id    String?             @db.VarChar(50)
-  type       notifications_type?
-  message    String?             @db.Text
-  is_read    Boolean?            @default(false)
-  created_at DateTime?           @db.DateTime(0)
-  users      users?              @relation(fields: [user_id], references: [user_id], onDelete: Restrict, onUpdate: Restrict, map: "notifications_ibfk_1")
+  idx        Int                @id @default(autoincrement())
+  user_id    String?            @db.VarChar(50)
+  type       notifications_type @default(POST)
+  message    String             @db.Text
+  is_read    Boolean?           @default(false)
+  created_at DateTime?          @db.DateTime(0)
+  users      users?             @relation(fields: [user_id], references: [user_id], onDelete: Restrict, onUpdate: Restrict, map: "notifications_ibfk_1")
 
   @@index([user_id], map: "user_id")
 }
@@ -143,25 +144,21 @@ model users {
   community_posts     community_posts[]
   email_verifications email_verifications[]
   notifications       notifications[]
-
   post_likes          post_likes[]
   refresh_tokens      refresh_tokens[]
 }
 
-// 새로 추가: Refresh Token을 저장하는 테이블
-// 기존에는 localStorage에만 저장했지만, 이제 DB에도 저장하여 보안 강화
 model refresh_tokens {
-  id          Int       @id @default(autoincrement())
-  user_id    Int       // users 테이블의 idx를 참조
-  token_hash String    @db.VarChar(255)  // 해시된 Refresh Token (평문 저장 금지)
-  expires_at DateTime  @db.DateTime(0)   // 토큰 만료 시간
-  created_at DateTime? @default(now()) @db.DateTime(0)
-  device_info String?  @db.VarChar(255)  // 기기 정보 (선택)
-  ip_address String?   @db.VarChar(45)   // IP 주소 (선택)
-  is_revoked Boolean?  @default(false)    // 무효화 여부 (로그아웃 시 true)
-  last_used_at DateTime? @db.DateTime(0)  // 마지막 사용 시간
-
-  users      users     @relation(fields: [user_id], references: [idx], onDelete: Cascade)
+  id           Int       @id @default(autoincrement())
+  user_id      Int
+  token_hash   String    @db.VarChar(255)
+  expires_at   DateTime  @db.DateTime(0)
+  created_at   DateTime? @default(now()) @db.DateTime(0)
+  device_info  String?   @db.VarChar(255)
+  ip_address   String?   @db.VarChar(45)
+  is_revoked   Boolean?  @default(false)
+  last_used_at DateTime? @db.DateTime(0)
+  users        users     @relation(fields: [user_id], references: [idx], onDelete: Cascade, onUpdate: Restrict, map: "refresh_tokens_ibfk_1")
 
   @@index([user_id], map: "idx_user_id")
   @@index([expires_at], map: "idx_expires_at")
@@ -187,29 +184,13 @@ model regions {
   code         String?         @db.VarChar(50)
   city         String?         @db.VarChar(50)
   district     String?         @db.VarChar(50)
+  substrict    String?         @db.VarChar(50)
   neighborhood String?         @db.VarChar(50)
   lat          Float?
   lng          Float?
   created_at   DateTime?       @db.DateTime(0)
   updated_at   DateTime?       @db.DateTime(0)
   use_yn       regions_use_yn? @default(Y)
-}
-
-model refresh_tokens {
-  id           Int       @id @default(autoincrement())
-  user_id      Int
-  token_hash   String    @db.VarChar(255)
-  expires_at   DateTime  @db.DateTime(0)
-  created_at   DateTime? @default(now()) @db.DateTime(0)
-  device_info  String?   @db.VarChar(255)
-  ip_address   String?   @db.VarChar(45)
-  is_revoked   Boolean?  @default(false)
-  last_used_at DateTime? @db.DateTime(0)
-  users        users     @relation(fields: [user_id], references: [idx], onDelete: Cascade, onUpdate: Restrict, map: "refresh_tokens_ibfk_1")
-
-  @@index([expires_at], map: "idx_expires_at")
-  @@index([token_hash], map: "idx_token_hash")
-  @@index([user_id], map: "idx_user_id")
 }
 
 enum community_posts_category {
@@ -232,12 +213,6 @@ enum facilities_facility_type {
   school
   hospital
   bar
-}
-
-enum notifications_type {
-  POST    @map("게시물")
-  COMMENT @map("댓글")
-  CHAT    @map("채팅알림")
 }
 
 enum email_verifications_purpose {
@@ -270,4 +245,10 @@ enum users_use_yn {
 enum regions_use_yn {
   Y
   N
+}
+
+enum notifications_type {
+  POST
+  LIKE
+  COMMENT
 }
