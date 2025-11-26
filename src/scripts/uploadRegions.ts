@@ -52,14 +52,14 @@ async function uploadRegions() {
       const coords = await getCoordsFromKakao(fullAddress);
 
       const exists = await prisma.regions.findFirst({
-        where: { subdistrict },
+        // where: { subdistrict },
       });
 
       if (exists) {
         await prisma.regions.update({
           where: { idx: exists.idx },
           data: {
-            code,
+            // code,
             city,
             district,
             lat: coords.lat,
@@ -74,7 +74,7 @@ async function uploadRegions() {
             code,
             city,
             district,
-            subdistrict,
+            // subdistrict,
             lat: coords.lat,
             lng: coords.lng,
             created_at: new Date(),

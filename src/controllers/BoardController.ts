@@ -132,10 +132,25 @@ export const saveBoard = async (req: Request, res: Response) => {
                 category: normalizedCategory,
                 tags: tags || null,
                 user_id: user_id,
+                views: 0,
+                likes: 0,
+                comments_count: 0,
                 created_at: new Date(),
                 updated_at: new Date(),
             }
         })
+
+        // 게시글 작성자에게 알림 생성
+        await prisma.notifications.create({
+            data: {
+                user_id: user_id,
+                type: 'POST',
+                message: `"${title}" 글이 등록되었습니다.`,
+                is_read: false,
+                created_at: new Date(),
+            }
+        })
+
         console.log('게시글 저장 성공:', board);
         res.status(201).json({ message: '게시글 저장 성공', data: board })
     } catch (error:any) {
@@ -409,14 +424,42 @@ export const likeBoard = async (req: Request, res: Response) => {
               created_at: new Date(),
             },
           });
-  
+          console.log('좋아요 기록 생성', postId, user_id);
           const updatedPost = await tx.community_posts.update({
             where: { idx: postId },
             data: {
               likes: { increment: 1 },
             },
           });
-  
+
+          console.log('updatedPost', updatedPost);
+          // 게시글 작성자에게 알림 생성 (좋아요 누른 사용자와 게시글 작성자가 다를 때만)
+          if (updatedPost.user_id && updatedPost.user_id !== user_id) {
+            console.log('전 알림 생성', updatedPost.user_id, updatedPost.title, user_id);
+            // 좋아요 누른 사용자 정보 가져오기
+            const likeUser = await tx.users.findUnique({
+              where: { user_id: user_id },
+              select: { nickname: true },
+            });
+
+            const likerName = likeUser?.nickname || '익명';
+            const postTitle = updatedPost.title || '게시글';
+
+            console.log('전전전 알림 생성', updatedPost.user_id, updatedPost.title, likerName);
+
+            await tx.notifications.create({
+              data: {
+                user_id: updatedPost.user_id,
+                type: 'LIKE',
+                message: `작성하신 게시글 "${postTitle}"에 ${likerName}님이 좋아요를 눌렀습니다.`,
+                is_read: false,
+                created_at: new Date(),
+              }
+            });
+
+            console.log('좋아요 생성 시 알림 생성', updatedPost.user_id, updatedPost.title, likerName);
+          }
+
           return { post: updatedPost, isLiked: true, message: '좋아요 처리 성공' };
         }
   
@@ -529,6 +572,29 @@ export const commentBoard = async (req: Request, res: Response) => {
                 comments_count: (post.comments_count ?? 0) + 1,
             }
         })
+
+        // 게시글 작성자에게 알림 생성 (댓글 작성자와 게시글 작성자가 다를 때만)
+        if (post.user_id && post.user_id !== user_id) {
+            // 댓글 작성자 정보 가져오기
+            const commentUser = await prisma.users.findUnique({
+                where: { user_id: user_id },
+                select: { nickname: true },
+            });
+
+            const commenterName = commentUser?.nickname || '익명';
+            const postTitle = post.title || '게시글';
+
+            await prisma.notifications.create({
+                data: {
+                    user_id: post.user_id,
+                    type: 'COMMENT',
+                    message: `작성하신 게시글 "${postTitle}"에 ${commenterName}님이 댓글을 남겼습니다.`,
+                    is_read: false,
+                    created_at: new Date(),
+                }
+            });
+        }
+
         res.status(200).json({ message: '댓글 작성 성공', data: comment })
     } catch (error:any) {
         console.log(error);

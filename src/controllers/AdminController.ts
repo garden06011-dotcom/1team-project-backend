@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { community_posts_category, PrismaClient } from '../generated/prisma/client';
 
 const prisma = new PrismaClient();
-
+//김우현 바지 사장
 const categoryMap: Record<string, community_posts_category> = {
     '정보공유': 'INFO_SHARE',
     '질문': 'QUESTION',
