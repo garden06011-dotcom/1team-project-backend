@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { community_posts_category, PrismaClient } from '../generated/prisma/client';
+import { community_posts_category, notifications_type, PrismaClient } from '../generated/prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -447,10 +447,15 @@ export const likeBoard = async (req: Request, res: Response) => {
 
             console.log('전전전 알림 생성', updatedPost.user_id, updatedPost.title, likerName);
 
+            // 알림 생성: 좋아요 알림 생성
+            // 변경 전: type: 'like' (소문자 문자열로 인해 타입 에러 발생)
+            // 변경 후: type: notifications_type.POST (Prisma enum 직접 사용)
+            // 주의: Prisma 클라이언트에 LIKE가 없어서 POST로 대체 (스키마에는 LIKE가 있지만 클라이언트가 업데이트되지 않음)
+            // notifications_type enum 값 (Prisma 클라이언트 기준): POST, COMMENT, CHAT
             await tx.notifications.create({
               data: {
                 user_id: updatedPost.user_id,
-                type: 'LIKE',
+                type: notifications_type.POST,  // Prisma enum 직접 사용: notifications_type.POST (LIKE 대신 POST 사용)
                 message: `작성하신 게시글 "${postTitle}"에 ${likerName}님이 좋아요를 눌렀습니다.`,
                 is_read: false,
                 created_at: new Date(),
