@@ -427,6 +427,7 @@ export const deactivateAccount = async (req: Request, res: Response) => {
     }
 }
 
+// 마이페이지 조회 (현재는 빈 함수로 유지)
 export const myPage = async (req: Request, res: Response) => {
     try {
 
@@ -435,3 +436,96 @@ export const myPage = async (req: Request, res: Response) => {
         res.status(500).json({ message: '마이페이지 조회 오류 에러:', error })
     }
 }
+
+// 닉네임 변경 API: 사용자의 닉네임을 변경하는 기능
+// ===== 변경 전 코드 (주석 처리) =====
+// 이전에는 닉네임 변경 기능이 없었음
+// export const updateNickname = async (req: Request, res: Response) => {
+//     // 함수가 존재하지 않았음
+// }
+// ===== 변경 전 코드 끝 =====
+
+// ===== 변경 후 코드 (현재 활성화) =====
+export const updateNickname = async (req: Request, res: Response) => {
+    try {
+        // JWT 토큰에서 사용자 정보 추출 (authenticateToken 미들웨어를 통해 req.user에 저장됨)
+        // 변경 전: 사용자 인증 정보 확인 로직이 없었음
+        if (!req.user || !req.user.id) {
+            return res.status(401).json({ message: '인증된 사용자 정보가 없습니다.' });
+        }
+
+        // 요청 본문에서 새 닉네임 가져오기
+        // 변경 전: nickname 파라미터를 받는 로직이 없었음
+        const { nickname } = req.body;
+
+        // 닉네임 유효성 검사
+        // 변경 전: 유효성 검사 로직이 없었음
+        if (!nickname || typeof nickname !== 'string' || nickname.trim().length === 0) {
+            return res.status(400).json({ message: '닉네임을 입력해주세요.' });
+        }
+
+        // 닉네임 길이 제한 (예: 최대 20자)
+        // 변경 전: 길이 제한 로직이 없었음
+        if (nickname.trim().length > 20) {
+            return res.status(400).json({ message: '닉네임은 20자 이하여야 합니다.' });
+        }
+
+        const userIdx = req.user.id;
+
+        // 사용자 정보 조회
+        // 변경 전: 사용자 정보 조회 로직이 없었음
+        const user = await prisma.users.findUnique({
+            where: { idx: userIdx },
+            select: { nickname: true }
+        });
+
+        if (!user) {
+            return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
+        }
+
+        // 닉네임이 변경되지 않은 경우
+        // 변경 전: 중복 체크 로직이 없었음
+        if (user.nickname === nickname.trim()) {
+            return res.status(200).json({ 
+                message: '닉네임이 변경되지 않았습니다.', 
+                nickname: user.nickname 
+            });
+        }
+
+        // 닉네임 업데이트
+        // 변경 전: DB 업데이트 로직이 없었음
+        const updatedUser = await prisma.users.update({
+            where: { idx: userIdx },
+            data: { 
+                nickname: nickname.trim(),
+                updated_at: new Date()
+            },
+            select: {
+                idx: true,
+                user_id: true,
+                nickname: true,
+                role: true
+            }
+        });
+
+        // 변경 전: 성공 응답 로직이 없었음
+        return res.status(200).json({ 
+            message: '닉네임이 성공적으로 변경되었습니다.',
+            user: {
+                idx: updatedUser.idx,
+                email: updatedUser.user_id,
+                nickname: updatedUser.nickname,
+                role: updatedUser.role
+            }
+        });
+
+    } catch (error: any) {
+        // 변경 전: 에러 처리 로직이 없었음
+        console.error('닉네임 변경 오류:', error);
+        res.status(500).json({ 
+            message: '닉네임 변경에 실패했습니다.', 
+            error: error?.message || error 
+        });
+    }
+}
+// ===== 변경 후 코드 끝 =====

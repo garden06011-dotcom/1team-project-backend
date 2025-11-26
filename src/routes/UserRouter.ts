@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { signup, myPage, findPasswordReset, login, refreshAccessToken, logout, deactivateAccount } from '../controllers/UserController';
+import { signup, myPage, findPasswordReset, login, refreshAccessToken, logout, deactivateAccount, updateNickname } from '../controllers/UserController';
 // import AuthJWT from '../middleware/AuthJWT';
 import { authenticateToken } from '../middleware/AuthJWT';
 
@@ -18,5 +18,8 @@ router.post('/logout', logout); // DB 저장 기능 활성화
 router.get('/mypage', authenticateToken, myPage);
 
 router.post('/withdraw', authenticateToken, deactivateAccount);
+
+// 닉네임 변경 API: 인증된 사용자만 접근 가능
+router.put('/nickname', authenticateToken, updateNickname);
 
 export default router;
