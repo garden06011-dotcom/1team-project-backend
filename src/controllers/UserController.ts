@@ -220,51 +220,14 @@ export const refreshAccessToken = async (req: Request, res: Response) => {
             return res.status(400).json({ message: 'Refresh Token이 필요합니다.' });
         }
 
-        // ===== 기존 코드 (주석 처리) =====
-        // // Refresh Token 검증
-        // try {
-        //     const decoded = verifyRefreshToken(refreshToken);
-        //
-        //     // DB에서 사용자 확인 (선택사항 - 토큰이 유효한지 추가 확인)
-        //     const user = await prisma.users.findUnique({
-        //         where: {
-        //             idx: decoded.id
-        //         }
-        //     });
-        //
-        //     if (!user) {
-        //         return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
-        //     }
-        //
-        //     // 사용자 타입 결정
-        //     const userType = (user.role as 'guest' | 'member' | 'admin') || 'member';
-        //
-        //     // 새 Access Token 생성
-        //     const newAccessToken = generateAccessToken({
-        //         id: decoded.id,
-        //         type: userType,
-        //     });
-        //
-        //     return res.status(200).json({
-        //         message: 'Access Token 갱신 성공',
-        //         accessToken: newAccessToken,
-        //     });
-        //
-        // } catch (error) {
-        //     // Refresh Token이 유효하지 않거나 만료된 경우
-        //     return res.status(401).json({ 
-        //         message: '유효하지 않거나 만료된 Refresh Token입니다.',
-        //         error: error instanceof Error ? error.message : 'Token verification failed'
-        //     });
-        // }
-        // ===== 기존 코드 끝 =====
-
         // ===== DB 검증 코드 (활성화) =====
         // 1단계: JWT 서명 검증 (토큰이 유효한 형식인지 확인)
         let decoded;
         try {
             decoded = verifyRefreshToken(refreshToken);
+            console.log('Refresh Token 디코딩 성공:', { id: decoded.id, type: decoded.type });
         } catch (error) {
+            console.error('Refresh Token 검증 실패:', error);
             return res.status(401).json({ 
                 message: '유효하지 않거나 만료된 Refresh Token입니다.',
                 error: error instanceof Error ? error.message : 'Token verification failed'
@@ -272,21 +235,42 @@ export const refreshAccessToken = async (req: Request, res: Response) => {
         }
 
         // 2단계: Refresh Token을 해시화
-        const refreshTokenHash = hashRefreshToken(refreshToken);
+        let refreshTokenHash;
+        try {
+            refreshTokenHash = hashRefreshToken(refreshToken);
+            console.log('Refresh Token 해시화 성공');
+        } catch (error) {
+            console.error('Refresh Token 해시화 실패:', error);
+            return res.status(500).json({ 
+                message: '토큰 처리 중 오류가 발생했습니다.',
+                error: error instanceof Error ? error.message : 'Token hashing failed'
+            });
+        }
 
         // 3단계: DB에서 Refresh Token 검색
-        const storedToken = await prisma.refresh_tokens.findFirst({
-            where: {
-                user_id: decoded.id,
-                token_hash: refreshTokenHash,
-                is_revoked: false,
-                expires_at: { gt: new Date() },
-            },
-            include: { users: true },
-        });
+        let storedToken;
+        try {
+            storedToken = await prisma.refresh_tokens.findFirst({
+                where: {
+                    user_id: decoded.id,
+                    token_hash: refreshTokenHash,
+                    is_revoked: false,
+                    expires_at: { gt: new Date() },
+                },
+                include: { users: true },
+            });
+            console.log('DB에서 Refresh Token 검색 완료:', storedToken ? '발견됨' : '없음');
+        } catch (error) {
+            console.error('DB에서 Refresh Token 검색 실패:', error);
+            return res.status(500).json({ 
+                message: '토큰 검색 중 오류가 발생했습니다.',
+                error: error instanceof Error ? error.message : 'Database query failed'
+            });
+        }
 
         // 4단계: DB에 토큰이 없거나 무효화된 경우
         if (!storedToken || !storedToken.users) {
+            console.log('Refresh Token이 DB에 없거나 무효화됨');
             return res.status(401).json({ 
                 message: '유효하지 않거나 만료된 Refresh Token입니다.',
                 error: 'Token not found in database or revoked'
@@ -295,19 +279,44 @@ export const refreshAccessToken = async (req: Request, res: Response) => {
 
         // 5단계: 사용자 정보 확인
         const user = storedToken.users;
+        
+        // 사용자 계정이 비활성화되었는지 확인
+        if (user.use_yn !== 'Y') {
+            console.log('비활성화된 사용자 계정');
+            return res.status(403).json({ 
+                message: '비활성화된 계정입니다. 관리자에게 문의하세요.',
+            });
+        }
+
         const userType = (user.role as 'guest' | 'member' | 'admin') || 'member';
 
         // 6단계: 새 Access Token 생성
-        const newAccessToken = generateAccessToken({
-            id: decoded.id,
-            type: userType,
-        });
+        let newAccessToken;
+        try {
+            newAccessToken = generateAccessToken({
+                id: decoded.id,
+                type: userType,
+            });
+            console.log('새 Access Token 생성 성공');
+        } catch (error) {
+            console.error('Access Token 생성 실패:', error);
+            return res.status(500).json({ 
+                message: '토큰 생성 중 오류가 발생했습니다.',
+                error: error instanceof Error ? error.message : 'Token generation failed'
+            });
+        }
 
         // 7단계: 마지막 사용 시간 업데이트
-        await prisma.refresh_tokens.update({
-            where: { id: storedToken.id },
-            data: { last_used_at: new Date() },
-        });
+        try {
+            await prisma.refresh_tokens.update({
+                where: { id: storedToken.id },
+                data: { last_used_at: new Date() },
+            });
+            console.log('Refresh Token 사용 시간 업데이트 성공');
+        } catch (error) {
+            console.error('Refresh Token 사용 시간 업데이트 실패:', error);
+            // 이 에러는 치명적이지 않으므로 계속 진행
+        }
 
         // 8단계: 새 Access Token 반환
         return res.status(200).json({
@@ -317,8 +326,13 @@ export const refreshAccessToken = async (req: Request, res: Response) => {
         // ===== DB 검증 코드 끝 =====
 
     } catch (error: any) {
-        console.log(error);
-        res.status(500).json({ message: '토큰 갱신 오류:', error })
+        console.error('refreshAccessToken 전체 에러:', error);
+        console.error('에러 스택:', error?.stack);
+        res.status(500).json({ 
+            message: '토큰 갱신 오류:', 
+            error: error?.message || error,
+            stack: process.env.NODE_ENV === 'development' ? error?.stack : undefined
+        });
     }
 }
 

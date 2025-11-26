@@ -17,7 +17,7 @@ router.post('/board/:id/like', likeBoard); // 좋아요 클릭시 좋아요 수 
 
 router.post('/board/:id/comment', commentBoard); // 댓글 작성 후 댓글 수 증가 및 댓글 내용 초기화 및 댓글 작성 후 댓글 리스트에 추가
 
-router.delete('/board/:id/comment/:commentId', deleteComment); // 댓글 삭제 요청
+router.delete('/board/:id/comment/:commentId', authenticateToken, deleteComment); // 댓글 삭제 요청 (인증 필요: 본인 댓글만 삭제 가능)
 
 router.get('/board/edit/:id', getBoardEdit); // 게시글 수정 불러오기
 
