@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { community_posts_category, notifications_type, PrismaClient } from '../generated/prisma/client';
+import { community_posts_category, PrismaClient } from '../generated/prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -56,13 +56,9 @@ export const BoardPage = async (req: Request, res: Response) => {
             include: {
                 users: true, // 글 작성자
             },
-            // 정렬 옵션: latest(최신순), views(조회순), likes(좋아요순)
-            // 조회순일 때는 views 기준 내림차순, 좋아요순일 때는 likes 기준 내림차순, 최신순일 때는 created_at 기준 내림차순
-            orderBy: sort === 'views' 
-                ? { views: 'desc' }  // 조회순: 조회수가 많은 순서대로
-                : sort === 'likes'
-                ? { likes: 'desc' }  // 좋아요순: 좋아요가 많은 순서대로
-                : { created_at: 'desc' },  // 최신순: 최근 작성된 순서대로 (기본값)
+            orderBy: {
+                created_at: sort === 'latest' ? 'desc' : 'asc', // 글 작성일
+            }, // 글 작성일 정렬
         });
         // totalCount도 findMany와 동일한 where 조건을 사용해야 정확한 페이지네이션 가능
         const totalCount = await prisma.community_posts.count({
@@ -217,19 +213,18 @@ export const getBoardDetail = async (req: Request, res: Response) => {
                     users: true,
                 },
             }),
-            // 댓글 목록 조회: users 관계를 포함하여 작성자 정보도 함께 가져옴
             prisma.comments.findMany({
                 where: {
                     post_id: Number(id),
                 },
                 include: {
-                    users: true,  // users 테이블의 정보 포함 (nickname, user_id 등)
+                    users: true,
                 },
                 orderBy: {
-                    created_at: 'desc',  // 최신 댓글부터 정렬
+                    created_at: 'desc',
                 },
-                skip: commentSkip,  // 페이지네이션: 건너뛸 댓글 수
-                take: commentLimit,  // 페이지네이션: 가져올 댓글 수
+                skip: commentSkip,
+                take: commentLimit,
             })
         ]);
 
@@ -271,19 +266,6 @@ export const getUserBoards = async (req: Request, res: Response) => {
             return res.status(400).json({ message: '유효하지 않은 사용자 ID 입니다.' });
         }
 
-        // URL 디코딩 (이메일 주소의 @ 기호 등을 처리)
-        const decodedUserId = decodeURIComponent(userId);
-
-        // 사용자 존재 여부 확인
-        const user = await prisma.users.findUnique({
-            where: { user_id: decodedUserId },
-            select: { user_id: true }
-        });
-
-        if (!user) {
-            return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
-        }
-
         const page = Number.isNaN(pageParam) || pageParam < 1 ? 1 : pageParam;
         const limit = Number.isNaN(limitParam) || limitParam < 1 ? 5 : limitParam;
         const skip = (page - 1) * limit;
@@ -291,12 +273,12 @@ export const getUserBoards = async (req: Request, res: Response) => {
         const [totalCount, posts] = await Promise.all([
             prisma.community_posts.count({
                 where: {
-                    user_id: decodedUserId,
+                    user_id: userId,
                 },
             }),
             prisma.community_posts.findMany({
                 where: {
-                    user_id: decodedUserId,
+                    user_id: userId,
                 },
                 include: {
                     users: true,
@@ -329,11 +311,8 @@ export const getUserBoards = async (req: Request, res: Response) => {
             },
         });
     } catch (error:any) {
-        console.error('getUserBoards 에러:', error);
-        res.status(500).json({ 
-            message: '사용자 게시글을 불러오지 못했습니다.', 
-            error: error?.message || error 
-        });
+        console.log(error);
+        res.status(500).json({ message: '사용자 게시글을 불러오지 못했습니다.', error })
     }
 }
 
@@ -447,15 +426,10 @@ export const likeBoard = async (req: Request, res: Response) => {
 
             console.log('전전전 알림 생성', updatedPost.user_id, updatedPost.title, likerName);
 
-            // 알림 생성: 좋아요 알림 생성
-            // 변경 전: type: 'like' (소문자 문자열로 인해 타입 에러 발생)
-            // 변경 후: type: notifications_type.POST (Prisma enum 직접 사용)
-            // 주의: Prisma 클라이언트에 LIKE가 없어서 POST로 대체 (스키마에는 LIKE가 있지만 클라이언트가 업데이트되지 않음)
-            // notifications_type enum 값 (Prisma 클라이언트 기준): POST, COMMENT, CHAT
             await tx.notifications.create({
               data: {
                 user_id: updatedPost.user_id,
-                type: notifications_type.POST,  // Prisma enum 직접 사용: notifications_type.POST (LIKE 대신 POST 사용)
+                type: 'LIKE',
                 message: `작성하신 게시글 "${postTitle}"에 ${likerName}님이 좋아요를 눌렀습니다.`,
                 is_read: false,
                 created_at: new Date(),
@@ -608,100 +582,36 @@ export const commentBoard = async (req: Request, res: Response) => {
 }
 
 
-// 댓글 삭제: 본인의 댓글만 삭제할 수 있도록 권한 체크 추가
+// 댓글 삭제
 export const deleteComment = async (req: Request, res: Response) => {
     try {
-        const { id } = req.params;  // 게시글 ID
-        const { commentId } = req.params;  // 댓글 ID
-        
-        // 게시글 ID 유효성 검사
+        const { id } = req.params;
+        const { commentId } = req.params;
         if(!id || isNaN(Number(id))) {
             return res.status(400).json({ message: '유효하지 않는 게시글 ID 입니다.' })
         }
 
-        // 댓글 ID 유효성 검사
         if(!commentId || isNaN(Number(commentId))) {
             return res.status(400).json({ message: '유효하지 않는 댓글 ID 입니다.' })
         }
 
-        // JWT 토큰에서 사용자 정보 추출
-        // authenticateToken 미들웨어를 통해 req.user에 사용자 정보가 저장됨
-        // req.user.id는 users 테이블의 idx (숫자), user_id는 이메일 주소 (String)
-        let requestUserId: string | null = null;
-        
-        // 방법 1: JWT 미들웨어를 사용하는 경우 (authenticateToken 미들웨어 사용 시)
-        if (req.user && typeof req.user === 'object' && 'id' in req.user) {
-            // req.user.id는 users 테이블의 idx (숫자)
-            // comments 테이블의 user_id는 String (이메일)이므로 users 테이블에서 조회하여 변환
-            const user = await prisma.users.findUnique({
-                where: { idx: req.user.id as number },
-                select: { user_id: true }  // user_id는 이메일 주소
-            });
-            requestUserId = user?.user_id || null;
-        }
-        
-        // 방법 2: JWT 미들웨어가 없는 경우 req.body에서 user_id 받기 (백업용)
-        if (!requestUserId && req.body?.user_id) {
-            requestUserId = req.body.user_id;
-        }
-
-        // 로그인하지 않은 경우: user_id가 없으면 401 에러 반환
-        if (!requestUserId) {
-            return res.status(401).json({ message: '로그인이 필요합니다.' })
-        }
-
-        // 댓글 조회: 댓글 정보와 게시글 ID 확인
         const comment = await prisma.comments.findUnique({
             where: {
                 idx: Number(commentId),
             }
         })
-
-        // 댓글이 존재하지 않는 경우
+        if(comment && comment.post_id !== Number(id)) {
+            return res.status(403).json({ message: '댓글 삭제 권한이 없습니다.' })
+        }
         if(!comment) {
             return res.status(404).json({ message: '댓글을 찾을 수 없습니다.' })
         }
 
-        // 댓글이 해당 게시글에 속하지 않는 경우 (보안 체크)
-        if(comment.post_id !== Number(id)) {
-            return res.status(403).json({ message: '댓글 삭제 권한이 없습니다.' })
-        }
-
-        // 관리자 권한 확인: admin@admin.com 계정 또는 role이 'admin'인 경우 모든 댓글 삭제 가능
-        const requestUser = await prisma.users.findUnique({
-            where: { user_id: requestUserId },
-            select: { role: true, user_id: true }
-        });
-
-        const isAdmin = requestUser?.user_id === 'admin@admin.com' || requestUser?.role === 'admin';
-
-        // 본인 댓글이 아니고 관리자도 아닌 경우: 삭제 권한 없음
-        if(comment.user_id !== requestUserId && !isAdmin) {
-            return res.status(403).json({ message: '본인의 댓글만 삭제할 수 있습니다.' })
-        }
-
-        // 댓글 삭제 실행
         await prisma.comments.delete({
             where: {
                 idx: Number(commentId),
             }
         })
-
-        // 게시글의 댓글 수 감소
-        const post = await prisma.community_posts.findUnique({
-            where: { idx: Number(id) },
-            select: { comments_count: true }
-        });
-
-        if (post) {
-            await prisma.community_posts.update({
-                where: { idx: Number(id) },
-                data: {
-                    comments_count: Math.max(0, (post.comments_count ?? 0) - 1),
-                }
-            });
-        }
-
         res.status(200).json({ message: '댓글 삭제 성공' })
 
     } catch (error:any) {
@@ -773,16 +683,7 @@ export const updateBoard = async (req: Request, res: Response) => {
             return res.status(404).json({ message: '게시글을 찾을 수 없습니다.' })
         }
         
-        // 관리자 권한 확인: admin@admin.com 계정 또는 role이 'admin'인 경우 모든 게시글 수정 가능
-        const requestUser = await prisma.users.findUnique({
-            where: { user_id: user_id },
-            select: { role: true, user_id: true }
-        });
-
-        const isAdmin = requestUser?.user_id === 'admin@admin.com' || requestUser?.role === 'admin';
-
-        // 본인 게시글이 아니고 관리자도 아닌 경우: 수정 권한 없음
-        if(post.user_id !== user_id && !isAdmin) {
+        if(post.user_id !== user_id) {
             return res.status(403).json({ message: '게시글 수정 권한이 없습니다.' })
         }
 
@@ -818,44 +719,19 @@ export const deleteBoard = async (req: Request, res: Response) => {
         //     return res.status(400).json({ message: '로그인이 필요합니다.' })
         // }
 
-        // JWT 토큰에서 사용자 정보 추출 (authenticateToken 미들웨어 사용)
-        let requestUserId: string | null = null;
-        
-        if (req.user && typeof req.user === 'object' && 'id' in req.user) {
-            const user = await prisma.users.findUnique({
-                where: { idx: req.user.id as number },
-                select: { user_id: true, role: true }
-            });
-            requestUserId = user?.user_id || null;
-        }
-
-        // 로그인하지 않은 경우
-        if (!requestUserId) {
-            return res.status(401).json({ message: '로그인이 필요합니다.' })
-        }
-
-        // 게시글 조회
         const post = await prisma.community_posts.findUnique({
             where: { idx: Number(id) }, // id는 params로 url에 있는 것을 뜻한다 저 부분은 Number(id)로 숫자형으로 변환하였으며
             // idx는 게시글 고유번호이며 그 부분과 id가 일치하는 게시글을 찾는다
+            // 또한 게시글 작성자와 삭제 권한이 있는 사용자가 일치하는 게시글을 찾는다
+            // 일반적인 mongodb에서 findOne과 동일한 기능 findUnique를 사용
         })
-        
         if(!post) {
             return res.status(404).json({ message: '게시글을 찾을 수 없습니다.' })
         }
 
-        // 관리자 권한 확인: admin@admin.com 계정 또는 role이 'admin'인 경우 모든 게시글 삭제 가능
-        const requestUser = await prisma.users.findUnique({
-            where: { user_id: requestUserId },
-            select: { role: true, user_id: true }
-        });
-
-        const isAdmin = requestUser?.user_id === 'admin@admin.com' || requestUser?.role === 'admin';
-
-        // 본인 게시글이 아니고 관리자도 아닌 경우: 삭제 권한 없음
-        if(post.user_id !== requestUserId && !isAdmin) {
-            return res.status(403).json({ message: '게시글 삭제 권한이 없습니다.' })
-        }
+        // if(post.user_id !== user_id) {
+        //     return res.status(403).json({ message: '게시글 삭제 권한이 없습니다.' })
+        // }
         
         await prisma.community_posts.delete({
             where: { idx: Number(id) },
@@ -867,5 +743,4 @@ export const deleteBoard = async (req: Request, res: Response) => {
         res.status(500).json({ message: '게시글 삭제 실패:', error })
     }
 }
-
 

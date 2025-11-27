@@ -428,6 +428,50 @@ export const deactivateAccount = async (req: Request, res: Response) => {
     }
 }
 
+// 비밀번호 변경: 현재 비밀번호 검증 후 새 비밀번호로 업데이트
+export const changePassword = async (req: Request, res: Response) => {
+    try {
+        if (!req.user?.id) {
+            return res.status(401).json({ message: '인증 정보가 필요합니다.' });
+        }
+
+        const { currentPassword, newPassword } = req.body;
+
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ message: '현재 비밀번호와 새 비밀번호를 모두 입력해주세요.' });
+        }
+
+        if (typeof newPassword !== 'string' || newPassword.length < 6) {
+            return res.status(400).json({ message: '새 비밀번호는 최소 6자 이상이어야 합니다.' });
+        }
+
+        const user = await prisma.users.findUnique({
+            where: { idx: req.user.id },
+            select: { password: true },
+        });
+
+        if (!user || !user.password) {
+            return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
+        }
+
+        const isValid = await bcrypt.compare(currentPassword, user.password);
+        if (!isValid) {
+            return res.status(400).json({ message: '현재 비밀번호가 일치하지 않습니다.' });
+        }
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        await prisma.users.update({
+            where: { idx: req.user.id },
+            data: { password: hashedPassword, updated_at: new Date() },
+        });
+
+        return res.status(200).json({ message: '비밀번호가 성공적으로 변경되었습니다.' });
+    } catch (error: any) {
+        console.error('비밀번호 변경 실패:', error);
+        return res.status(500).json({ message: '비밀번호 변경 중 오류가 발생했습니다.', error: error?.message || error });
+    }
+};
+
 // 마이페이지 조회 (현재는 빈 함수로 유지)
 export const myPage = async (req: Request, res: Response) => {
     try {
