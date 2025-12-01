@@ -5,8 +5,6 @@ const prisma = new PrismaClient();
 
 export const checkAdmin = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        console.log('checkAdmin 실행됨');
-        console.log('req.user:', req.user);
         
         // 1. req.user가 없거나 type이 admin이 아니면 거부
         if(!req.user || req.user.type !== 'admin') {

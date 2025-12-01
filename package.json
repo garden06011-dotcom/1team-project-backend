@@ -7,7 +7,9 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "ts-node-dev src/index.ts",
-    "upload:regions": "ts-node src/scripts/uploadRegions.ts"
+    "upload:regions": "ts-node src/scripts/uploadRegions.ts",
+    "upload:time-day": "ts-node src/scripts/uploadTimeDayData.ts",
+    "check:excel": "ts-node src/scripts/checkExcelStructure.ts"
   },
   "keywords": [],
   "author": "",

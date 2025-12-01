@@ -4,7 +4,7 @@ import { PrismaClient } from '../generated/prisma/client';
 const prisma = new PrismaClient();
 
 // 사용자가 원하는 입지 요청값 저장
- export const user_request_save = async (req: Request, res: Response) => {
+export const user_request_save = async (req: Request, res: Response) => {
     try {
         const {user_id, category, rent_range, region_city, region_district} = req.body;
         if(!user_id || !category || !rent_range || !region_city || !region_district) {
@@ -21,7 +21,6 @@ const prisma = new PrismaClient();
                 created_at: new Date(new Date().getTime() + 9 * 60 * 60 * 1000)
               }
           });
-        console.log("@@@ request", request);
           
         return res.status(200).json({ message: '요청이 성공적으로 접수되었습니다.', request: request })
     } catch (error:any) {
@@ -34,7 +33,6 @@ const prisma = new PrismaClient();
  // 창업 위치 데이터 가져오기
 export const getLocationDate = async (req: Request, res: Response) => {
   try {
-    console.log("@@@ getLocationDate", req.body);
     const regions = await prisma.regions.findMany({
       where: { use_yn: 'Y' },
       orderBy: [
@@ -85,12 +83,10 @@ let emdData: any = null;
 (function loadEmdData() {
   const filePath = path.join(__dirname, "../res/data/seoulDong_polygon.json");
   emdData = JSON.parse(fs.readFileSync(filePath, "utf-8"));
-  console.log("EMD 폴리곤 데이터 메모리 적재 완료:", emdData.features.length, "개");
 })();
 
 export const getDongPolygon = async (req: Request, res: Response) => {
   try {
-    console.log("@@@ getDongPolygon", req.body);
     const { district, dong } = req.body; // 예: "은평구", "불광동"
 
     if (!district || !dong) {
@@ -124,7 +120,6 @@ export const getDongPolygon = async (req: Request, res: Response) => {
       properties: target.properties,
     });
   } catch (error) {
-    console.error("폴리곤 조회 오류:", error);
     res.status(500).json({ message: "서버 오류", error });
   }
 };
@@ -172,7 +167,6 @@ export const getLocationCenter = async (req: Request, res: Response) => {
 // 구 단위 모든 행정동 폴리곤 반환
 export const getDistrictPolygons = async (req: Request, res: Response) => {
   try {
-    console.log("@@@ getDistrictPolygons", req.body);
     const { city, district } = req.body;
 
     if (!city || !district) {
@@ -220,8 +214,6 @@ let populationData: any = null;
 export const getPopulationData = async (req: Request, res: Response) => {
   try {
     const { dongName } = req.body;
-    console.log("@@@ getPopulationData dongName", dongName);
-    console.log("@@@ getPopulationData", req.body);
     if (!dongName) {
       return res.status(400).json({ message: "dongName은 필수입니다." });
     }
@@ -232,9 +224,7 @@ export const getPopulationData = async (req: Request, res: Response) => {
 
     // 동 이름 정규화 (동이 없으면 추가)
     const normalizedDong = dongName.endsWith('동') ? dongName.trim() : `${dongName.trim()}동`;
-    console.log("@@@ normalizedDong", normalizedDong);
     const dongData = populationData.data[normalizedDong];
-    console.log("@@@ dongData", dongData);
     if (!dongData) {
       return res.status(404).json({ 
         message: `${normalizedDong} 유동인구 데이터를 찾을 수 없습니다.`,
@@ -249,5 +239,141 @@ export const getPopulationData = async (req: Request, res: Response) => {
   }
 };
 
+// 시간대/요일별 유동인구 데이터 가져오기
+let timeDayData: any = null;
 
+// 서버 시작 시 파일 한 번만 메모리에 로드
+(function loadTimeDayData() {
+  try {
+    const filePath = path.join(__dirname, "../res/data/time_day_data.json");
+    if (fs.existsSync(filePath)) {
+      timeDayData = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+      console.log("시간대/요일 유동인구 데이터 메모리 적재 완료");
+    } else {
+      console.warn("시간대/요일 유동인구 데이터 파일이 없습니다:", filePath);
+    }
+  } catch (error) {
+    console.error("시간대/요일 유동인구 데이터 로드 실패:", error);
+  }
+})();
+
+export const getTimeDayData = async (req: Request, res: Response) => {
+  try {
+    const { dongName } = req.body;
+    
+    if (!dongName) {
+      return res.status(400).json({ message: "dongName은 필수입니다." });
+    }
+
+    if (!timeDayData || !timeDayData.data) {
+      return res.status(500).json({ message: "시간대/요일 유동인구 데이터가 로드되지 않았습니다." });
+    }
+
+    // 동 이름 정규화 (동이 없으면 추가)
+    const normalizedDong = dongName.endsWith('동') ? dongName.trim() : `${dongName.trim()}동`;
+    const dongData = timeDayData.data[normalizedDong];
+    
+    if (!dongData) {
+      return res.status(404).json({ 
+        message: `${normalizedDong} 시간대/요일 유동인구 데이터를 찾을 수 없습니다.`,
+        availableDongs: Object.keys(timeDayData.data).slice(0, 10) 
+      });
+    }
+    return res.status(200).json(dongData);
+  } catch (error: any) {
+    console.error("시간대/요일 유동인구 데이터 조회 오류:", error);
+    return res.status(500).json({ message: "서버 오류", error: error.message });
+  }
+};
+
+// region_subdistrict별 순위 조회 (동점 처리 포함)
+export const getSubdistrictRankings = async (req: Request, res: Response) => {
+  try {
+    // region_subdistrict가 null이 아닌 데이터만 집계
+    const subdistrictCounts = await prisma.analysis_requests.groupBy({
+      by: ['region_subdistrict'],
+      where: {
+        region_subdistrict: {
+          not: null,
+        },
+      },
+      _count: {
+        region_subdistrict: true,
+      },
+      orderBy: {
+        _count: {
+          region_subdistrict: 'desc',
+        },
+      },
+    });
+
+    // 각 region_subdistrict에 대한 city, district 정보 가져오기
+    const rankingsWithLocation = await Promise.all(
+      subdistrictCounts.map(async (item) => {
+        // 각 subdistrict의 첫 번째 레코드를 가져와서 city, district 정보 얻기
+        const firstRecord = await prisma.analysis_requests.findFirst({
+          where: {
+            region_subdistrict: item.region_subdistrict,
+          },
+          select: {
+            region_city: true,
+            region_district: true,
+          },
+        });
+
+        return {
+          subdistrict: item.region_subdistrict,
+          count: item._count.region_subdistrict,
+          city: firstRecord?.region_city || null,
+          district: firstRecord?.region_district || null,
+        };
+      })
+    );
+
+    console.log("@@@ rankingsWithLocation", rankingsWithLocation);
+    // 동점 처리하여 순위 매기기
+    const rankings = rankingsWithLocation.map((item, index) => {
+      const count = item.count;
+      let rank = index + 1; // 기본 순위 (1부터 시작)
+      
+      // 이전 항목들과 비교하여 동점 처리
+      if (index > 0) {
+        // 이전 항목의 count와 같으면 같은 순위
+        const previousItem = rankingsWithLocation[index - 1];
+        if (previousItem.count === count) {
+          // 이전 항목의 순위를 찾아서 동일하게 설정
+          // 이전 항목들 중에서 같은 count를 가진 첫 번째 항목의 순위를 찾음
+          for (let i = index - 1; i >= 0; i--) {
+            if (rankingsWithLocation[i].count === count) {
+              // 같은 count를 가진 첫 번째 항목의 순위 사용
+              rank = i + 1;
+              break;
+            }
+          }
+        }
+      }
+      
+      return {
+        rank: rank,
+        subdistrict: item.subdistrict,
+        city: item.city,
+        district: item.district,
+        count: count,
+      };
+    });
+
+    // 상위 5개만 반환
+    const topRankings = rankings.slice(0, 5);
+
+    return res.status(200).json({
+      message: '순위 조회 성공',
+      data: topRankings,
+    });
+  } catch (error: any) {
+    console.error('순위 조회 오류:', error);
+    return res.status(500).json({ message: '서버 오류', error: error.message });
+  }
+};
+
+  // ============================================================
   

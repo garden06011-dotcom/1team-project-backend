@@ -24,7 +24,6 @@ async function getCoordsFromKakao(query: string) {
       return { lat: parseFloat(y), lng: parseFloat(x) };
     }
   } catch (error) {
-    console.warn(`📌 카카오 API 호출 실패: ${query}`, error);
   }
 
   return { lat: null, lng: null };
@@ -32,7 +31,6 @@ async function getCoordsFromKakao(query: string) {
 
 async function uploadRegions() {
   try {
-    console.log("🌍 지역 정보 업로드 시작...");
 
     const filePath = "src/res/data/행정동_행정구역추가.xlsx";
     const workbook = XLSX.readFile(filePath);
@@ -67,7 +65,6 @@ async function uploadRegions() {
             updated_at: new Date(),
           },
         });
-        console.log(`🔁 UPDATE: ${fullAddress} → ${coords.lat}, ${coords.lng}`);
       } else {
         await prisma.regions.create({
           data: {
@@ -81,13 +78,10 @@ async function uploadRegions() {
             updated_at: new Date(),
           },
         });
-        console.log(`✨ INSERT: ${fullAddress} → ${coords.lat}, ${coords.lng}`);
       }
     }
 
-    console.log("위경도 업데이트 완료!");
   } catch (error) {
-    console.error("업데이트 실패 😢:", error);
   } finally {
     await prisma.$disconnect();
   }

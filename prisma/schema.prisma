@@ -17,7 +17,6 @@ model analysis_requests {
   region_district    String?                   @db.VarChar(50)
   region_subdistrict String?                   @db.VarChar(50)
   status             analysis_requests_status? @default(pending)
-  count              Int?
   created_at         DateTime?                 @db.DateTime(0)
   recommendations    recommendations[]
 
@@ -96,13 +95,13 @@ model facilities {
 }
 
 model notifications {
-  idx        Int                @id @default(autoincrement())
-  user_id    String?            @db.VarChar(50)
-  type       notifications_type @default(POST)
-  message    String             @db.Text
-  is_read    Boolean?           @default(false)
-  created_at DateTime?          @db.DateTime(0)
-  users      users?             @relation(fields: [user_id], references: [user_id], onDelete: Restrict, onUpdate: Restrict, map: "notifications_ibfk_1")
+  idx        Int                 @id @default(autoincrement())
+  user_id    String?             @db.VarChar(50)
+  type       notifications_type?
+  message    String              @db.Text
+  is_read    Boolean?            @default(false)
+  created_at DateTime?           @db.DateTime(0)
+  users      users?              @relation(fields: [user_id], references: [user_id], onDelete: Restrict, onUpdate: Restrict, map: "notifications_ibfk_1")
 
   @@index([user_id], map: "user_id")
 }

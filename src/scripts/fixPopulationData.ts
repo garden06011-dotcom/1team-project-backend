@@ -28,6 +28,4 @@ const outputData = {
 // 파일 저장
 fs.writeFileSync(filePath, JSON.stringify(outputData, null, 2), "utf-8");
 
-console.log(`✅ 총 ${normalizedDongList.length}개 행정동 데이터 정규화 완료`);
-console.log(`📝 "제" 제거 완료 (예: 갈현제1동 -> 갈현1동)`);
 
