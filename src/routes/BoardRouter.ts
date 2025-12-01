@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { BoardPage, getBoardDetail, updateBoard, deleteBoard, saveBoard, likeBoard, commentBoard, getUserBoards, getBoardEdit, deleteComment } from '../controllers/BoardController';
+import { BoardPage, getBoardDetail, updateBoard, deleteBoard, saveBoard, likeBoard, commentBoard, getUserBoards, getBoardEdit, deleteComment, incrementViewCount } from '../controllers/BoardController';
 import { authenticateToken } from '../middleware/AuthJWT';
 
 
@@ -10,6 +10,7 @@ router.get('/board', BoardPage); // 게시판
 router.get('/board/user/:userId', getUserBoards); // 특정 사용자의 게시글
 
 router.get('/board/:id', getBoardDetail); // 게시글 상세 페이지
+router.post('/board/:id/view', incrementViewCount); // 조회수 증가 (별도 엔드포인트)
 
 router.post('/board/write', authenticateToken, saveBoard); // 게시글 작성 저장하기
 

@@ -574,3 +574,70 @@ export const updateNickname = async (req: Request, res: Response) => {
     }
 }
 // ===== 변경 후 코드 끝 =====
+
+
+// 회원탈퇴
+export const withdraw = async (req: Request, res: Response) => {
+    try {
+        if (!req.user?.id) {
+            return res.status(401).json({ message: '인증 정보가 필요합니다.' });
+        }
+
+        const user = await prisma.users.findUnique({
+            where: { idx: req.user.id },
+            select: { use_yn: true },
+        });
+
+        if (!user) {
+            return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
+        }
+
+        if (user.use_yn === 'N') {
+            return res.status(200).json({ message: '이미 비활성화된 계정입니다.' });
+        }
+
+        await prisma.users.update({
+            where: { idx: req.user.id },
+            data: { use_yn: 'N', updated_at: new Date() },
+        });
+
+        return res.status(200).json({ message: '계정이 비활성화되었습니다.' });
+    } catch (error: any) {
+        console.log(error);
+        res.status(500).json({ message: '회원탈퇴에 실패했습니다.', error });
+    }
+}
+
+// 게시글 삭제
+// export const deletePost = async (req: Request, res: Response) => {              
+//     try {
+//         if (!req.user?.id) {
+//             return res.status(401).json({ message: '인증 정보가 필요합니다.' });
+//         }
+
+//         const { id } = req.params;
+
+//         const post = await prisma.community_posts.findUnique({
+//             where: { idx: Number(id) },
+//             select: { user_id: true },
+//         });
+
+
+//         if (!post) {
+//             return res.status(404).json({ message: '게시글을 찾을 수 없습니다.' });
+//         }
+
+//         if (post.user_id !== req.user?.user_id) {
+//             return res.status(403).json({ message: '게시글 삭제 권한이 없습니다.' });
+//         }
+
+//         await prisma.community_posts.delete({
+//             where: { idx: Number(id) },
+//         });
+
+//         return res.status(200).json({ message: '게시글이 성공적으로 삭제되었습니다.' });
+//     } catch (error: any) {
+//         console.error('게시글 삭제 실패:', error);
+//         return res.status(500).json({ message: '게시글 삭제 중 오류가 발생했습니다.', error: error?.message || error });
+//     }
+// }

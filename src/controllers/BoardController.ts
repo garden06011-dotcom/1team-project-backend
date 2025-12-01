@@ -56,9 +56,12 @@ export const BoardPage = async (req: Request, res: Response) => {
             include: {
                 users: true, // 글 작성자
             },
-            orderBy: {
-                created_at: sort === 'latest' ? 'desc' : 'asc', // 글 작성일
-            }, // 글 작성일 정렬
+            orderBy: 
+                sort === 'views' 
+                    ? { views: 'desc' } // 조회순: 조회수가 많은 순서대로
+                    : sort === 'likes'
+                    ? { likes: 'desc' } // 좋아요순: 좋아요가 많은 순서대로
+                    : { created_at: 'desc' }, // 최신순: 최신 게시글이 먼저
         });
         // totalCount도 findMany와 동일한 where 조건을 사용해야 정확한 페이지네이션 가능
         const totalCount = await prisma.community_posts.count({
@@ -203,12 +206,10 @@ export const getBoardDetail = async (req: Request, res: Response) => {
             isLiked = !!likeRecord;
         }
 
-        const [updatedPost, comments] = await Promise.all([
-            prisma.community_posts.update({
+        // 조회수 증가 없이 게시글과 댓글 조회
+        const [postData, comments] = await Promise.all([
+            prisma.community_posts.findUnique({
                 where: { idx: Number(id) },
-                data: {
-                    views: (post.views ?? 0) + 1,
-                },
                 include: {
                     users: true,
                 },
@@ -227,11 +228,15 @@ export const getBoardDetail = async (req: Request, res: Response) => {
                 take: commentLimit,
             })
         ]);
+        
+        if (!postData) {
+            return res.status(404).json({ message: '게시글을 찾을 수 없습니다.' });
+        }
 
-        // 카테고리 한글로 바꿔서 보내기 (증가된 views 포함)
+        // 카테고리 한글로 바꿔서 보내기
         const mappedPost = {
-            ...updatedPost,
-            category: updatedPost.category ? categoryReverseMap[updatedPost.category] : null,
+            ...postData,
+            category: postData.category ? categoryReverseMap[postData.category] : null,
             isLiked,
             comments,
         };
@@ -705,6 +710,43 @@ export const updateBoard = async (req: Request, res: Response) => {
         res.status(500).json({ message: '게시글 수정 실패:', error })
     }
 }
+
+// 조회수 증가 (별도 엔드포인트)
+export const incrementViewCount = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        
+        if (!id || isNaN(Number(id))) {
+            return res.status(400).json({ message: '유효하지 않은 게시글 ID 입니다.' });
+        }
+
+        const post = await prisma.community_posts.findUnique({
+            where: {
+                idx: Number(id),
+            },
+        });
+
+        if (!post) {
+            return res.status(404).json({ message: '게시글을 찾을 수 없습니다.' });
+        }
+
+        // 조회수 증가
+        const updatedPost = await prisma.community_posts.update({
+            where: { idx: Number(id) },
+            data: {
+                views: (post.views ?? 0) + 1,
+            },
+        });
+
+        res.status(200).json({
+            message: '조회수 증가 성공',
+            data: { views: updatedPost.views },
+        });
+    } catch (error: any) {
+        console.log(error);
+        res.status(500).json({ message: '조회수 증가 실패:', error });
+    }
+};
 
 // 게시글 삭제
 export const deleteBoard = async (req: Request, res: Response) => {
