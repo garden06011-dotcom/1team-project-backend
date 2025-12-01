@@ -7,6 +7,7 @@ import ChatRouter from './routes/ChatRouter';
 import AdminRouter from './routes/AdminRouter';
 import NotificationRouter from './routes/NotificationRouter';
 import cors from 'cors'; //cors 라이브러리를 사용하여 크로스 도메인 정책을 설정하기 위함
+require('dotenv').config();
 
 //아래의 2줄을 추가 하세요.
 import dotenv from "dotenv";

@@ -221,51 +221,14 @@ export const refreshAccessToken = async (req: Request, res: Response) => {
             return res.status(400).json({ message: 'Refresh Token이 필요합니다.' });
         }
 
-        // ===== 기존 코드 (주석 처리) =====
-        // // Refresh Token 검증
-        // try {
-        //     const decoded = verifyRefreshToken(refreshToken);
-        //
-        //     // DB에서 사용자 확인 (선택사항 - 토큰이 유효한지 추가 확인)
-        //     const user = await prisma.users.findUnique({
-        //         where: {
-        //             idx: decoded.id
-        //         }
-        //     });
-        //
-        //     if (!user) {
-        //         return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
-        //     }
-        //
-        //     // 사용자 타입 결정
-        //     const userType = (user.role as 'guest' | 'member' | 'admin') || 'member';
-        //
-        //     // 새 Access Token 생성
-        //     const newAccessToken = generateAccessToken({
-        //         id: decoded.id,
-        //         type: userType,
-        //     });
-        //
-        //     return res.status(200).json({
-        //         message: 'Access Token 갱신 성공',
-        //         accessToken: newAccessToken,
-        //     });
-        //
-        // } catch (error) {
-        //     // Refresh Token이 유효하지 않거나 만료된 경우
-        //     return res.status(401).json({ 
-        //         message: '유효하지 않거나 만료된 Refresh Token입니다.',
-        //         error: error instanceof Error ? error.message : 'Token verification failed'
-        //     });
-        // }
-        // ===== 기존 코드 끝 =====
-
         // ===== DB 검증 코드 (활성화) =====
         // 1단계: JWT 서명 검증 (토큰이 유효한 형식인지 확인)
         let decoded;
         try {
             decoded = verifyRefreshToken(refreshToken);
+            console.log('Refresh Token 디코딩 성공:', { id: decoded.id, type: decoded.type });
         } catch (error) {
+            console.error('Refresh Token 검증 실패:', error);
             return res.status(401).json({ 
                 message: '유효하지 않거나 만료된 Refresh Token입니다.',
                 error: error instanceof Error ? error.message : 'Token verification failed'
@@ -273,21 +236,42 @@ export const refreshAccessToken = async (req: Request, res: Response) => {
         }
 
         // 2단계: Refresh Token을 해시화
-        const refreshTokenHash = hashRefreshToken(refreshToken);
+        let refreshTokenHash;
+        try {
+            refreshTokenHash = hashRefreshToken(refreshToken);
+            console.log('Refresh Token 해시화 성공');
+        } catch (error) {
+            console.error('Refresh Token 해시화 실패:', error);
+            return res.status(500).json({ 
+                message: '토큰 처리 중 오류가 발생했습니다.',
+                error: error instanceof Error ? error.message : 'Token hashing failed'
+            });
+        }
 
         // 3단계: DB에서 Refresh Token 검색
-        const storedToken = await prisma.refresh_tokens.findFirst({
-            where: {
-                user_id: decoded.id,
-                token_hash: refreshTokenHash,
-                is_revoked: false,
-                expires_at: { gt: new Date() },
-            },
-            include: { users: true },
-        });
+        let storedToken;
+        try {
+            storedToken = await prisma.refresh_tokens.findFirst({
+                where: {
+                    user_id: decoded.id,
+                    token_hash: refreshTokenHash,
+                    is_revoked: false,
+                    expires_at: { gt: new Date() },
+                },
+                include: { users: true },
+            });
+            console.log('DB에서 Refresh Token 검색 완료:', storedToken ? '발견됨' : '없음');
+        } catch (error) {
+            console.error('DB에서 Refresh Token 검색 실패:', error);
+            return res.status(500).json({ 
+                message: '토큰 검색 중 오류가 발생했습니다.',
+                error: error instanceof Error ? error.message : 'Database query failed'
+            });
+        }
 
         // 4단계: DB에 토큰이 없거나 무효화된 경우
         if (!storedToken || !storedToken.users) {
+            console.log('Refresh Token이 DB에 없거나 무효화됨');
             return res.status(401).json({ 
                 message: '유효하지 않거나 만료된 Refresh Token입니다.',
                 error: 'Token not found in database or revoked'
@@ -296,19 +280,44 @@ export const refreshAccessToken = async (req: Request, res: Response) => {
 
         // 5단계: 사용자 정보 확인
         const user = storedToken.users;
+        
+        // 사용자 계정이 비활성화되었는지 확인
+        if (user.use_yn !== 'Y') {
+            console.log('비활성화된 사용자 계정');
+            return res.status(403).json({ 
+                message: '비활성화된 계정입니다. 관리자에게 문의하세요.',
+            });
+        }
+
         const userType = (user.role as 'guest' | 'member' | 'admin') || 'member';
 
         // 6단계: 새 Access Token 생성
-        const newAccessToken = generateAccessToken({
-            id: decoded.id,
-            type: userType,
-        });
+        let newAccessToken;
+        try {
+            newAccessToken = generateAccessToken({
+                id: decoded.id,
+                type: userType,
+            });
+            console.log('새 Access Token 생성 성공');
+        } catch (error) {
+            console.error('Access Token 생성 실패:', error);
+            return res.status(500).json({ 
+                message: '토큰 생성 중 오류가 발생했습니다.',
+                error: error instanceof Error ? error.message : 'Token generation failed'
+            });
+        }
 
         // 7단계: 마지막 사용 시간 업데이트
-        await prisma.refresh_tokens.update({
-            where: { id: storedToken.id },
-            data: { last_used_at: new Date() },
-        });
+        try {
+            await prisma.refresh_tokens.update({
+                where: { id: storedToken.id },
+                data: { last_used_at: new Date() },
+            });
+            console.log('Refresh Token 사용 시간 업데이트 성공');
+        } catch (error) {
+            console.error('Refresh Token 사용 시간 업데이트 실패:', error);
+            // 이 에러는 치명적이지 않으므로 계속 진행
+        }
 
         // 8단계: 새 Access Token 반환
         return res.status(200).json({
@@ -318,8 +327,13 @@ export const refreshAccessToken = async (req: Request, res: Response) => {
         // ===== DB 검증 코드 끝 =====
 
     } catch (error: any) {
-        console.log(error);
-        res.status(500).json({ message: '토큰 갱신 오류:', error })
+        console.error('refreshAccessToken 전체 에러:', error);
+        console.error('에러 스택:', error?.stack);
+        res.status(500).json({ 
+            message: '토큰 갱신 오류:', 
+            error: error?.message || error,
+            stack: process.env.NODE_ENV === 'development' ? error?.stack : undefined
+        });
     }
 }
 
@@ -414,6 +428,51 @@ export const deactivateAccount = async (req: Request, res: Response) => {
     }
 }
 
+// 비밀번호 변경: 현재 비밀번호 검증 후 새 비밀번호로 업데이트
+export const changePassword = async (req: Request, res: Response) => {
+    try {
+        if (!req.user?.id) {
+            return res.status(401).json({ message: '인증 정보가 필요합니다.' });
+        }
+
+        const { currentPassword, newPassword } = req.body;
+
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ message: '현재 비밀번호와 새 비밀번호를 모두 입력해주세요.' });
+        }
+
+        if (typeof newPassword !== 'string' || newPassword.length < 6) {
+            return res.status(400).json({ message: '새 비밀번호는 최소 6자 이상이어야 합니다.' });
+        }
+
+        const user = await prisma.users.findUnique({
+            where: { idx: req.user.id },
+            select: { password: true },
+        });
+
+        if (!user || !user.password) {
+            return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
+        }
+
+        const isValid = await bcrypt.compare(currentPassword, user.password);
+        if (!isValid) {
+            return res.status(400).json({ message: '현재 비밀번호가 일치하지 않습니다.' });
+        }
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        await prisma.users.update({
+            where: { idx: req.user.id },
+            data: { password: hashedPassword, updated_at: new Date() },
+        });
+
+        return res.status(200).json({ message: '비밀번호가 성공적으로 변경되었습니다.' });
+    } catch (error: any) {
+        console.error('비밀번호 변경 실패:', error);
+        return res.status(500).json({ message: '비밀번호 변경 중 오류가 발생했습니다.', error: error?.message || error });
+    }
+};
+
+// 마이페이지 조회 (현재는 빈 함수로 유지)
 export const myPage = async (req: Request, res: Response) => {
     try {
 
@@ -422,3 +481,163 @@ export const myPage = async (req: Request, res: Response) => {
         res.status(500).json({ message: '마이페이지 조회 오류 에러:', error })
     }
 }
+
+// 닉네임 변경 API: 사용자의 닉네임을 변경하는 기능
+// ===== 변경 전 코드 (주석 처리) =====
+// 이전에는 닉네임 변경 기능이 없었음
+// export const updateNickname = async (req: Request, res: Response) => {
+//     // 함수가 존재하지 않았음
+// }
+// ===== 변경 전 코드 끝 =====
+
+// ===== 변경 후 코드 (현재 활성화) =====
+export const updateNickname = async (req: Request, res: Response) => {
+    try {
+        // JWT 토큰에서 사용자 정보 추출 (authenticateToken 미들웨어를 통해 req.user에 저장됨)
+        // 변경 전: 사용자 인증 정보 확인 로직이 없었음
+        if (!req.user || !req.user.id) {
+            return res.status(401).json({ message: '인증된 사용자 정보가 없습니다.' });
+        }
+
+        // 요청 본문에서 새 닉네임 가져오기
+        // 변경 전: nickname 파라미터를 받는 로직이 없었음
+        const { nickname } = req.body;
+
+        // 닉네임 유효성 검사
+        // 변경 전: 유효성 검사 로직이 없었음
+        if (!nickname || typeof nickname !== 'string' || nickname.trim().length === 0) {
+            return res.status(400).json({ message: '닉네임을 입력해주세요.' });
+        }
+
+        // 닉네임 길이 제한 (예: 최대 20자)
+        // 변경 전: 길이 제한 로직이 없었음
+        if (nickname.trim().length > 20) {
+            return res.status(400).json({ message: '닉네임은 20자 이하여야 합니다.' });
+        }
+
+        const userIdx = req.user.id;
+
+        // 사용자 정보 조회
+        // 변경 전: 사용자 정보 조회 로직이 없었음
+        const user = await prisma.users.findUnique({
+            where: { idx: userIdx },
+            select: { nickname: true }
+        });
+
+        if (!user) {
+            return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
+        }
+
+        // 닉네임이 변경되지 않은 경우
+        // 변경 전: 중복 체크 로직이 없었음
+        if (user.nickname === nickname.trim()) {
+            return res.status(200).json({ 
+                message: '닉네임이 변경되지 않았습니다.', 
+                nickname: user.nickname 
+            });
+        }
+
+        // 닉네임 업데이트
+        // 변경 전: DB 업데이트 로직이 없었음
+        const updatedUser = await prisma.users.update({
+            where: { idx: userIdx },
+            data: { 
+                nickname: nickname.trim(),
+                updated_at: new Date()
+            },
+            select: {
+                idx: true,
+                user_id: true,
+                nickname: true,
+                role: true
+            }
+        });
+
+        // 변경 전: 성공 응답 로직이 없었음
+        return res.status(200).json({ 
+            message: '닉네임이 성공적으로 변경되었습니다.',
+            user: {
+                idx: updatedUser.idx,
+                email: updatedUser.user_id,
+                nickname: updatedUser.nickname,
+                role: updatedUser.role
+            }
+        });
+
+    } catch (error: any) {
+        // 변경 전: 에러 처리 로직이 없었음
+        console.error('닉네임 변경 오류:', error);
+        res.status(500).json({ 
+            message: '닉네임 변경에 실패했습니다.', 
+            error: error?.message || error 
+        });
+    }
+}
+// ===== 변경 후 코드 끝 =====
+
+
+// 회원탈퇴
+export const withdraw = async (req: Request, res: Response) => {
+    try {
+        if (!req.user?.id) {
+            return res.status(401).json({ message: '인증 정보가 필요합니다.' });
+        }
+
+        const user = await prisma.users.findUnique({
+            where: { idx: req.user.id },
+            select: { use_yn: true },
+        });
+
+        if (!user) {
+            return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
+        }
+
+        if (user.use_yn === 'N') {
+            return res.status(200).json({ message: '이미 비활성화된 계정입니다.' });
+        }
+
+        await prisma.users.update({
+            where: { idx: req.user.id },
+            data: { use_yn: 'N', updated_at: new Date() },
+        });
+
+        return res.status(200).json({ message: '계정이 비활성화되었습니다.' });
+    } catch (error: any) {
+        console.log(error);
+        res.status(500).json({ message: '회원탈퇴에 실패했습니다.', error });
+    }
+}
+
+// 게시글 삭제
+// export const deletePost = async (req: Request, res: Response) => {              
+//     try {
+//         if (!req.user?.id) {
+//             return res.status(401).json({ message: '인증 정보가 필요합니다.' });
+//         }
+
+//         const { id } = req.params;
+
+//         const post = await prisma.community_posts.findUnique({
+//             where: { idx: Number(id) },
+//             select: { user_id: true },
+//         });
+
+
+//         if (!post) {
+//             return res.status(404).json({ message: '게시글을 찾을 수 없습니다.' });
+//         }
+
+//         if (post.user_id !== req.user?.user_id) {
+//             return res.status(403).json({ message: '게시글 삭제 권한이 없습니다.' });
+//         }
+
+//         await prisma.community_posts.delete({
+//             where: { idx: Number(id) },
+//         });
+
+//         return res.status(200).json({ message: '게시글이 성공적으로 삭제되었습니다.' });
+//     } catch (error: any) {
+//         console.error('게시글 삭제 실패:', error);
+//         return res.status(500).json({ message: '게시글 삭제 중 오류가 발생했습니다.', error: error?.message || error });
+//     }
+// }
