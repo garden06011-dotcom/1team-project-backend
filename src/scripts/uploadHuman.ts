@@ -73,14 +73,12 @@ const outputPath = "/mnt/user-data/outputs/population_data.json";
 fs.mkdirSync(path.dirname(outputPath), { recursive: true });
 fs.writeFileSync(outputPath, JSON.stringify(output_data, null, 2), "utf-8");
 
-console.log(`✅ 총 ${dong_list.length}개 행정동 데이터 처리 완료`);
 console.log(
   `📦 파일 크기: ${(JSON.stringify(output_data).length / 1024).toFixed(1)} KB`
 );
 
 // 샘플 출력
 const sample_dong = dong_list[0];
-console.log(`\n📊 샘플 데이터 (${sample_dong}):`);
 console.log(
   JSON.stringify(data_by_dong[sample_dong], null, 2).substring(0, 500)
 );
