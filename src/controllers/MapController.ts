@@ -375,5 +375,89 @@ export const getSubdistrictRankings = async (req: Request, res: Response) => {
   }
 };
 
+// region_district별 순위 조회 (구 단위, 동점 처리 포함)
+export const getDistrictRankings = async (req: Request, res: Response) => {
+  try {
+    // region_district가 null이 아닌 데이터만 집계
+    const districtCounts = await prisma.analysis_requests.groupBy({
+      by: ['region_district'],
+      where: {
+        region_district: {
+          not: null,
+        },
+      },
+      _count: {
+        region_district: true,
+      },
+      orderBy: {
+        _count: {
+          region_district: 'desc',
+        },
+      },
+    });
+
+    // 각 region_district에 대한 city 정보 가져오기
+    const rankingsWithLocation = await Promise.all(
+      districtCounts.map(async (item) => {
+        // 각 district의 첫 번째 레코드를 가져와서 city 정보 얻기
+        const firstRecord = await prisma.analysis_requests.findFirst({
+          where: {
+            region_district: item.region_district,
+          },
+          select: {
+            region_city: true,
+          },
+        });
+
+        return {
+          district: item.region_district,
+          count: item._count.region_district,
+          city: firstRecord?.region_city || null,
+        };
+      })
+    );
+
+    // 동점 처리하여 순위 매기기
+    const rankings = rankingsWithLocation.map((item, index) => {
+      const count = item.count;
+      let rank = index + 1; // 기본 순위 (1부터 시작)
+      
+      // 이전 항목들과 비교하여 동점 처리
+      if (index > 0) {
+        // 이전 항목의 count와 같으면 같은 순위
+        const previousItem = rankingsWithLocation[index - 1];
+        if (previousItem.count === count) {
+          // 이전 항목의 순위를 찾아서 동일하게 설정
+          for (let i = index - 1; i >= 0; i--) {
+            if (rankingsWithLocation[i].count === count) {
+              // 같은 count를 가진 첫 번째 항목의 순위 사용
+              rank = i + 1;
+              break;
+            }
+          }
+        }
+      }
+      
+      return {
+        rank: rank,
+        district: item.district,
+        city: item.city,
+        count: count,
+      };
+    });
+
+    // 상위 5개만 반환
+    const topRankings = rankings.slice(0, 5);
+
+    return res.status(200).json({
+      message: '순위 조회 성공',
+      data: topRankings,
+    });
+  } catch (error: any) {
+    console.error('순위 조회 오류:', error);
+    return res.status(500).json({ message: '서버 오류', error: error.message });
+  }
+};
+
   // ============================================================
   

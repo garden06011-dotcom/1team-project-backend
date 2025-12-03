@@ -25,7 +25,6 @@ export const getNotifications = async (req: Request, res: Response) => {
         where: { idx: req.user.id },
         select: { user_id: true },
       });
-      console.log('getNotifications: 사용자 조회 성공', user?.user_id);
     } catch (dbError: any) {
       console.error('getNotifications: 사용자 조회 실패', dbError);
       return res.status(500).json({ 
@@ -52,7 +51,6 @@ export const getNotifications = async (req: Request, res: Response) => {
           created_at: 'desc',
         },
       });
-      console.log('getNotifications: 알림 조회 성공', notifications.length, '개');
     } catch (dbError: any) {
       console.error('getNotifications: 알림 조회 실패', dbError);
       return res.status(500).json({ 

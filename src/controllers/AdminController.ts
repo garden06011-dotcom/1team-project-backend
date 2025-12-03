@@ -149,6 +149,57 @@ export const deleteAdminUser = async (req: Request, res: Response) => {
     }
 }
 
+// 관리자 회원 상태 토글 (use_yn Y/N 변경)
+export const toggleAdminUserStatus = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const userIdx = parseInt(id);
+
+        if (Number.isNaN(userIdx)) {
+            return res.status(400).json({ message: '유효하지 않은 사용자 ID 입니다.' });
+        }
+
+        const targetUser = await prisma.users.findUnique({
+            where: { idx: userIdx },
+            select: { role: true, use_yn: true },
+        });
+
+        if (!targetUser) {
+            return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
+        }
+
+        if (targetUser.role === 'admin') {
+            return res.status(403).json({ message: '관리자 계정은 상태를 변경할 수 없습니다.' });
+        }
+
+        const newStatus = targetUser.use_yn === 'Y' ? 'N' : 'Y';
+
+        const updatedUser = await prisma.users.update({
+            where: { idx: userIdx },
+            data: {
+                use_yn: newStatus,
+                updated_at: new Date(),
+            },
+        });
+
+        // 비활성화 시 토큰 무효화
+        if (newStatus === 'N') {
+            await prisma.refresh_tokens.updateMany({
+                where: { user_id: userIdx, is_revoked: false },
+                data: { is_revoked: true },
+            });
+        }
+
+        return res.status(200).json({ 
+            message: newStatus === 'Y' ? '회원이 복구되었습니다.' : '회원이 탈퇴 처리되었습니다.', 
+            user: updatedUser 
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ message: '회원 상태 변경 오류', error: error });
+    }
+}
+
 
 // 관리자 게시글 페이지(페이지네이션, 검색 기능 추가)
 export const getAdminBoard = async (req: Request, res: Response) => {

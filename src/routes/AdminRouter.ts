@@ -1,5 +1,5 @@
 import express from 'express';
-import { getAdminDashboard, getAdminUsers, deleteAdminUser, getAdminBoard, deleteAdminBoard } from '../controllers/AdminController';
+import { getAdminDashboard, getAdminUsers, deleteAdminUser, toggleAdminUserStatus, getAdminBoard, deleteAdminBoard } from '../controllers/AdminController';
 import { checkAdmin } from '../middleware/CheckAdmin';
 import { authenticateToken } from '../middleware/AuthJWT';
 
@@ -11,6 +11,8 @@ router.get('/admin', authenticateToken, checkAdmin, getAdminDashboard);
 router.get('/admin/user', authenticateToken, checkAdmin, getAdminUsers);
 
 router.delete('/admin/user/:id', authenticateToken, checkAdmin, deleteAdminUser);
+
+router.patch('/admin/user/:id/status', authenticateToken, checkAdmin, toggleAdminUserStatus);
 
 router.get('/admin/board', authenticateToken, checkAdmin, getAdminBoard);
 
