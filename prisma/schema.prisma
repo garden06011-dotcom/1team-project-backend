@@ -61,10 +61,10 @@ model community_posts {
   created_at     DateTime?                 @db.DateTime(0)
   updated_at     DateTime?                 @db.DateTime(0)
   comments       comments[]
-  users          users?                    @relation(fields: [user_id], references: [user_id], onDelete: Restrict, onUpdate: Restrict, map: "community_posts_ibfk_1")
+  users          users?                    @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "community_posts_ibfk_1")
   post_likes     post_likes[]
 
-  @@index([user_id], map: "user_id")
+  @@index([user_id], map: "FK_community_posts_users")
 }
 
 model email_verifications {
