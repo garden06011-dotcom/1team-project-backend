@@ -1,0 +1,1394 @@
+openapi: 3.0.3
+info:
+  title: 상권 분석 프로젝트 API
+  version: 1.0.0
+  description: |
+    상권 분석 프로젝트 백엔드 API 명세서입니다.
+    - 인증: JWT Bearer 토큰 (Access Token)
+    - Refresh Token은 body로 전달
+
+servers:
+  - url: http://localhost:8000
+    description: Local 개발 서버
+
+tags:
+  - name: Auth
+    description: 회원가입 / 로그인 / 토큰 관련 API
+  - name: User
+    description: 사용자 정보, 비밀번호/닉네임 변경, 탈퇴 등
+  - name: Board
+    description: 커뮤니티 게시판 API
+  - name: Admin
+    description: 관리자 전용 대시보드 / 회원 / 게시글 관리 API
+  - name: Chat
+    description: RAG 기반 챗봇 스트리밍 API
+  - name: Map
+    description: 창업 위치 / 폴리곤 / 유동인구 등 지도 관련 API
+  - name: Notification
+    description: 알림 조회 / 읽음 처리 / 삭제 API
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    # ----- 공통 -----
+    ApiResponseMessage:
+      type: object
+      properties:
+        message:
+          type: string
+          example: OK
+
+    # ----- Auth / User -----
+    SignupRequest:
+      type: object
+      required:
+        - email
+        - password
+        - name
+        - nickname
+        - birth
+        - genderDigit
+      properties:
+        email:
+          type: string
+          format: email
+          example: test@example.com
+        password:
+          type: string
+          format: password
+          example: Passw0rd!
+        name:
+          type: string
+          example: 홍길동
+        nickname:
+          type: string
+          example: 상권마스터
+        birth:
+          type: string
+          description: YYYYMMDD
+          example: "19950101"
+        genderDigit:
+          type: string
+          description: 주민등록번호 성별 코드 (1,2,3,4 등)
+          example: "1"
+
+    SignupResponseUser:
+      type: object
+      properties:
+        user_id:
+          type: string
+          example: test@example.com
+        name:
+          type: string
+        password:
+          type: string
+          description: "해시된 비밀번호"
+        nickname:
+          type: string
+        sex:
+          type: string
+          enum: [M, F]
+        role:
+          type: string
+          example: member
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        use_yn:
+          type: string
+          example: "Y"
+        rrn:
+          type: string
+          description: "내부 저장용 주민번호 형태 문자열"
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+
+    LoginUser:
+      type: object
+      properties:
+        idx:
+          type: integer
+          example: 1
+        email:
+          type: string
+          format: email
+        nickname:
+          type: string
+        role:
+          type: string
+          example: member
+
+    LoginResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: 로그인 성공
+        user:
+          $ref: '#/components/schemas/LoginUser'
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        accessTokenExpiresIn:
+          type: integer
+          description: 초 단위 만료 시간
+        refreshTokenExpiresIn:
+          type: integer
+          description: 초 단위 만료 시간
+
+    RefreshTokenRequest:
+      type: object
+      required:
+        - refreshToken
+      properties:
+        refreshToken:
+          type: string
+
+    RefreshTokenResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Access Token 갱신 성공
+        accessToken:
+          type: string
+
+    FindPasswordResetRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          description: 새 비밀번호
+
+    LogoutRequest:
+      type: object
+      properties:
+        refreshToken:
+          type: string
+          description: 특정 토큰만 무효화 시 사용
+        user_id:
+          type: string
+          description: 이메일 (refreshToken 없이 모든 토큰 무효화 시 사용)
+
+    ChangePasswordRequest:
+      type: object
+      required:
+        - currentPassword
+        - newPassword
+      properties:
+        currentPassword:
+          type: string
+        newPassword:
+          type: string
+          minLength: 6
+
+    UpdateNicknameRequest:
+      type: object
+      required:
+        - nickname
+      properties:
+        nickname:
+          type: string
+          example: 새로운닉네임
+
+    # ----- Board / Comment -----
+    BoardPost:
+      type: object
+      properties:
+        idx:
+          type: integer
+        title:
+          type: string
+        content:
+          type: string
+        category:
+          type: string
+          description: 한글 카테고리 (정보공유/질문/자유)
+        tags:
+          type: string
+          nullable: true
+        user_id:
+          type: string
+        views:
+          type: integer
+        likes:
+          type: integer
+        comments_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        users:
+          type: object
+          nullable: true
+          description: 작성자 정보 (include: users)
+
+    Pagination:
+      type: object
+      properties:
+        currentPage:
+          type: integer
+        totalPages:
+          type: integer
+        hasPreviousPage:
+          type: boolean
+        hasNextPage:
+          type: boolean
+
+    BoardListResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: 게시글 조회 성공
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/BoardPost'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    SaveBoardRequest:
+      type: object
+      required:
+        - title
+        - content
+        - category
+        - user_id
+      properties:
+        title:
+          type: string
+        content:
+          type: string
+        category:
+          type: string
+          example: 정보공유
+        tags:
+          type: string
+          nullable: true
+        user_id:
+          type: string
+          description: 작성자 email 또는 user_id
+
+    CommentRequest:
+      type: object
+      required:
+        - content
+        - user_id
+      properties:
+        content:
+          type: string
+        user_id:
+          type: string
+
+    LikeBoardRequest:
+      type: object
+      required:
+        - action
+        - user_id
+      properties:
+        action:
+          type: string
+          enum: [like, unlike]
+        user_id:
+          type: string
+
+    # ----- Admin -----
+    AdminUser:
+      type: object
+      properties:
+        idx:
+          type: integer
+        name:
+          type: string
+        nickname:
+          type: string
+        user_id:
+          type: string
+          format: email
+        role:
+          type: string
+        use_yn:
+          type: string
+          example: "Y"
+        created_at:
+          type: string
+          format: date-time
+
+    AdminUserListResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminUser'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    # ----- Map -----
+    UserRequestSaveRequest:
+      type: object
+      required:
+        - user_id
+        - category
+        - rent_range
+        - region_city
+        - region_district
+      properties:
+        user_id:
+          type: string
+        category:
+          type: string
+        rent_range:
+          type: string
+        region_city:
+          type: string
+        region_district:
+          type: string
+
+    LocationCenterRequest:
+      type: object
+      required:
+        - city
+        - district
+      properties:
+        city:
+          type: string
+          example: 서울
+        district:
+          type: string
+          example: 강남구
+
+    DongPolygonRequest:
+      type: object
+      required:
+        - district
+        - dong
+      properties:
+        district:
+          type: string
+          example: 은평구
+        dong:
+          type: string
+          example: 불광동
+
+    DistrictPolygonsRequest:
+      type: object
+      required:
+        - city
+        - district
+      properties:
+        city:
+          type: string
+        district:
+          type: string
+
+    PopulationDataRequest:
+      type: object
+      required:
+        - dongName
+      properties:
+        dongName:
+          type: string
+          example: 불광동
+
+    # ----- Chat (RAG) -----
+    RagChatStreamRequest:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          example: "서울 강남구 카페 창업 괜찮은가요?"
+        conversation_history:
+          type: array
+          items:
+            type: object
+            additionalProperties:
+              type: string
+
+    # ----- Notification -----
+    Notification:
+      type: object
+      properties:
+        idx:
+          type: integer
+        user_id:
+          type: string
+        type:
+          type: string
+          example: LIKE
+        message:
+          type: string
+        is_read:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+paths:
+  # =========================
+  # Auth / User
+  # =========================
+  /user/signup:
+    post:
+      tags: [Auth]
+      summary: 회원가입
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignupRequest'
+      responses:
+        '201':
+          description: 회원가입 성공
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: 회원가입 성공
+                  user:
+                    $ref: '#/components/schemas/SignupResponseUser'
+        '400':
+          description: 유효성 검사 실패 / 이미 가입된 회원
+        '500':
+          description: 서버 오류
+
+  /user/find-password:
+    post:
+      tags: [Auth]
+      summary: 비밀번호 재설정 (이메일 기반)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FindPasswordResetRequest'
+      responses:
+        '200':
+          description: 비밀번호 변경 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseMessage'
+        '400':
+          description: 입력값 누락 / 가입되지 않은 회원
+        '500':
+          description: 서버 오류
+
+  /user/login:
+    post:
+      tags: [Auth]
+      summary: 로그인 (Access/Refresh Token 발급)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: 로그인 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          description: 입력값 누락 / 회원 없음 / 비밀번호 불일치
+        '403':
+          description: 비활성화 계정
+        '500':
+          description: 서버 오류
+
+  /user/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh Token으로 새 Access Token 발급
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '200':
+          description: 갱신 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshTokenResponse'
+        '400':
+          description: Refresh Token 누락
+        '401':
+          description: 유효하지 않거나 만료된 토큰
+        '403':
+          description: 비활성화 계정
+        '500':
+          description: 서버 오류
+
+  /user/logout:
+    post:
+      tags: [Auth]
+      summary: 로그아웃 (Refresh Token 무효화)
+      description: |
+        - body에 refreshToken을 주면 해당 토큰만 무효화
+        - body에 user_id만 주면 해당 유저의 모든 Refresh Token 무효화
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+      responses:
+        '200':
+          description: 로그아웃 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseMessage'
+        '500':
+          description: 서버 오류
+
+  /user/mypage:
+    get:
+      tags: [User]
+      summary: 마이페이지 조회 (현재는 구현 보류 상태)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 성공 (현재는 빈 응답 구조)
+        '401':
+          description: 인증 필요
+        '500':
+          description: 서버 오류
+
+  /user/withdraw:
+    post:
+      tags: [User]
+      summary: 계정 비활성화 / 회원탈퇴
+      description: |
+        JWT로 인증된 사용자의 use_yn을 'N'으로 변경합니다.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 비활성화 완료 또는 이미 비활성화된 계정
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseMessage'
+        '401':
+          description: 인증 필요
+        '404':
+          description: 사용자 없음
+        '500':
+          description: 서버 오류
+
+  /user/nickname:
+    put:
+      tags: [User]
+      summary: 닉네임 변경
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateNicknameRequest'
+      responses:
+        '200':
+          description: 닉네임 변경 성공
+        '400':
+          description: 유효하지 않은 닉네임
+        '401':
+          description: 인증 필요
+        '404':
+          description: 사용자 없음
+        '500':
+          description: 서버 오류
+
+  /user/change-password:
+    post:
+      tags: [User]
+      summary: 비밀번호 변경 (현재 비밀번호 확인 후)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '200':
+          description: 비밀번호 변경 성공
+        '400':
+          description: 현재 비밀번호 불일치 / 새 비밀번호 조건 불만족
+        '401':
+          description: 인증 필요
+        '404':
+          description: 사용자 없음
+        '500':
+          description: 서버 오류
+
+  # =========================
+  # Board
+  # =========================
+  /board:
+    get:
+      tags: [Board]
+      summary: 게시글 목록 조회 (검색 + 정렬 + 페이지네이션)
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 5
+        - in: query
+          name: title
+          schema:
+            type: string
+        - in: query
+          name: content
+          schema:
+            type: string
+        - in: query
+          name: tags
+          schema:
+            type: string
+        - in: query
+          name: nickname
+          schema:
+            type: string
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum: [latest, views, likes]
+            default: latest
+        - in: query
+          name: category
+          schema:
+            type: string
+            example: all
+        - in: query
+          name: user_id
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 게시글 목록 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BoardListResponse'
+        '500':
+          description: 서버 오류
+
+  /board/write:
+    post:
+      tags: [Board]
+      summary: 게시글 작성
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveBoardRequest'
+      responses:
+        '201':
+          description: 게시글 저장 성공
+        '400':
+          description: 입력값 누락
+        '401':
+          description: 인증 필요
+        '500':
+          description: 서버 오류
+
+  /board/{id}:
+    get:
+      tags: [Board]
+      summary: 게시글 상세 조회 (댓글 페이지네이션 포함)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: user_id
+          schema:
+            type: string
+          description: 좋아요 여부 확인용
+        - in: query
+          name: commentPage
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: commentLimit
+          schema:
+            type: integer
+            default: 5
+      responses:
+        '200':
+          description: 게시글 상세 조회 성공
+        '400':
+          description: 잘못된 ID
+        '404':
+          description: 게시글 없음
+        '500':
+          description: 서버 오류
+
+  /board/{id}/view:
+    post:
+      tags: [Board]
+      summary: 게시글 조회수 증가
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 조회수 증가 성공
+        '400':
+          description: 잘못된 ID
+        '404':
+          description: 게시글 없음
+        '500':
+          description: 서버 오류
+
+  /board/{id}/like:
+    post:
+      tags: [Board]
+      summary: 게시글 좋아요 / 좋아요 취소
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LikeBoardRequest'
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 좋아요 처리 성공
+        '400':
+          description: 잘못된 요청
+        '404':
+          description: 게시글 없음
+        '500':
+          description: 서버 오류
+
+  /board/{id}/comment:
+    post:
+      tags: [Board]
+      summary: 댓글 작성
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentRequest'
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 댓글 작성 성공
+        '400':
+          description: 잘못된 요청
+        '404':
+          description: 게시글 없음
+        '500':
+          description: 서버 오류
+
+  /board/{id}/comment/{commentId}:
+    delete:
+      tags: [Board]
+      summary: 댓글 삭제
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+        - in: path
+          name: commentId
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 댓글 삭제 성공
+        '400':
+          description: 잘못된 ID
+        '403':
+          description: 삭제 권한 없음
+        '404':
+          description: 댓글 없음
+        '500':
+          description: 서버 오류
+
+  /board/edit/{id}:
+    get:
+      tags: [Board]
+      summary: 게시글 수정용 데이터 조회
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 게시글 수정 데이터 조회 성공
+        '400':
+          description: 잘못된 ID
+        '404':
+          description: 게시글 없음
+        '500':
+          description: 서버 오류
+    put:
+      tags: [Board]
+      summary: 게시글 수정
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/SaveBoardRequest'
+      responses:
+        '200':
+          description: 게시글 수정 성공
+        '400':
+          description: 잘못된 요청
+        '403':
+          description: 수정 권한 없음
+        '404':
+          description: 게시글 없음
+        '500':
+          description: 서버 오류
+
+  /board/delete/{id}:
+    delete:
+      tags: [Board]
+      summary: 게시글 삭제
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 게시글 삭제 성공
+        '400':
+          description: 잘못된 ID
+        '404':
+          description: 게시글 없음
+        '500':
+          description: 서버 오류
+
+  /board/user/{userId}:
+    get:
+      tags: [Board]
+      summary: 특정 사용자의 게시글 목록 조회 (마이페이지용)
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 5
+      responses:
+        '200':
+          description: 사용자 게시글 조회 성공
+        '400':
+          description: 잘못된 사용자 ID
+        '500':
+          description: 서버 오류
+
+  # =========================
+  # Admin
+  # =========================
+  /admin:
+    get:
+      tags: [Admin]
+      summary: 관리자 대시보드 조회
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 관리자 대시보드 조회 성공
+        '401':
+          description: 인증 필요
+        '403':
+          description: 관리자 권한 필요
+        '500':
+          description: 서버 오류
+
+  /admin/user:
+    get:
+      tags: [Admin]
+      summary: 관리자 - 회원 목록 조회 (검색 + 페이지네이션)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+        - in: query
+          name: type
+          schema:
+            type: string
+            enum: [name, email, nickname]
+            default: name
+        - in: query
+          name: keyword
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 관리자 회원 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserListResponse'
+        '401':
+          description: 인증 필요
+        '403':
+          description: 관리자 권한 필요
+        '500':
+          description: 서버 오류
+
+  /admin/user/{id}:
+    delete:
+      tags: [Admin]
+      summary: 관리자 - 회원 비활성화
+      description: 실제 삭제가 아니라 use_yn을 'N'으로 변경하고 Refresh Token 무효화
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 사용자 비활성화 성공 / 이미 비활성화
+        '400':
+          description: 잘못된 ID
+        '401':
+          description: 인증 필요
+        '403':
+          description: 관리자 권한 필요 또는 admin 계정 비활성화 불가
+        '404':
+          description: 사용자 없음
+        '500':
+          description: 서버 오류
+
+  /admin/board:
+    get:
+      tags: [Admin]
+      summary: 관리자 - 게시판 관리 목록 조회
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 5
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum: [latest, name, nickname, email]
+            default: latest
+        - in: query
+          name: category
+          schema:
+            type: string
+            example: all
+        - in: query
+          name: keyword
+          schema:
+            type: string
+        - in: query
+          name: type
+          schema:
+            type: string
+            enum: [title, nickname, category]
+            default: title
+      responses:
+        '200':
+          description: 관리자 게시판 조회 성공
+        '401':
+          description: 인증 필요
+        '403':
+          description: 관리자 권한 필요
+        '500':
+          description: 서버 오류
+
+  /admin/board/{id}:
+    delete:
+      tags: [Admin]
+      summary: 관리자 - 게시글 삭제
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 게시글 삭제 성공
+        '400':
+          description: 잘못된 ID
+        '401':
+          description: 인증 필요
+        '403':
+          description: 관리자 권한 필요
+        '404':
+          description: 게시글 없음
+        '500':
+          description: 서버 오류
+
+  # =========================
+  # Chat (RAG)
+  # =========================
+  /api/chat/rag-chat-stream:
+    post:
+      tags: [Chat]
+      summary: RAG 챗봇 스트리밍 응답
+      description: Python RAG 서비스로 프록시하여 SSE(text/event-stream)로 응답을 전달합니다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RagChatStreamRequest'
+      responses:
+        '200':
+          description: 스트리밍 시작 (SSE)
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '400':
+          description: message 누락 등
+        '5XX':
+          description: RAG 서비스 오류
+
+  /api/chat/rag-health:
+    get:
+      tags: [Chat]
+      summary: RAG 서비스 상태 확인
+      responses:
+        '200':
+          description: RAG 서비스 연결 OK
+        '503':
+          description: RAG 서비스 불가 / 연결 실패
+
+  # =========================
+  # Map
+  # =========================
+  /api/map/save:
+    post:
+      tags: [Map]
+      summary: 사용자의 창업 입지 요청 저장
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRequestSaveRequest'
+      responses:
+        '200':
+          description: 요청 성공적으로 접수
+        '400':
+          description: 입력값 누락
+        '500':
+          description: 서버 오류
+
+  /api/map/location:
+    get:
+      tags: [Map]
+      summary: 창업 위치 데이터 (시/구 리스트) 가져오기
+      responses:
+        '200':
+          description: 위치 데이터 조회 성공
+        '500':
+          description: 서버 오류
+
+  /api/map/location-center:
+    post:
+      tags: [Map]
+      summary: 시/구 기준 중심 좌표 가져오기
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LocationCenterRequest'
+      responses:
+        '200':
+          description: 중심 좌표 조회 성공
+        '400':
+          description: city/district 누락
+        '404':
+          description: 해당 지역 정보 없음
+        '500':
+          description: 서버 오류
+
+  /api/map/dong-polygon:
+    post:
+      tags: [Map]
+      summary: 특정 동의 폴리곤 데이터 가져오기
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DongPolygonRequest'
+      responses:
+        '200':
+          description: 폴리곤 조회 성공
+        '400':
+          description: district/dong 누락
+        '404':
+          description: 해당 동 폴리곤 없음
+        '500':
+          description: 서버 오류
+
+  /api/map/district-polygons:
+    post:
+      tags: [Map]
+      summary: 구 단위 모든 행정동 폴리곤 반환
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DistrictPolygonsRequest'
+      responses:
+        '200':
+          description: 구 내 동 리스트 및 폴리곤 조회 성공
+        '400':
+          description: city/district 누락
+        '404':
+          description: 구 데이터 없음
+        '500':
+          description: 서버 오류
+
+  /api/map/population-data:
+    post:
+      tags: [Map]
+      summary: 동별 유동인구 데이터 조회
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PopulationDataRequest'
+      responses:
+        '200':
+          description: 유동인구 데이터 조회 성공
+        '400':
+          description: dongName 누락
+        '404':
+          description: 해당 동 데이터 없음
+        '500':
+          description: 서버 오류
+
+  # =========================
+  # Notification
+  # =========================
+  /notifications:
+    get:
+      tags: [Notification]
+      summary: 알림 목록 조회
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 알림 조회 성공
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: 알림 조회 성공
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Notification'
+        '401':
+          description: 인증 필요
+        '404':
+          description: 사용자 없음
+        '500':
+          description: 서버 오류
+
+  /notifications/{id}/read:
+    put:
+      tags: [Notification]
+      summary: 단일 알림 읽음 처리
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 알림 읽음 처리 성공
+        '400':
+          description: 잘못된 ID
+        '401':
+          description: 인증 필요
+        '403':
+          description: 권한 없음
+        '404':
+          description: 알림 / 사용자 없음
+        '500':
+          description: 서버 오류
+
+  /notifications/read-all:
+    put:
+      tags: [Notification]
+      summary: 모든 알림 읽음 처리
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 모든 알림 읽음 처리 성공
+        '401':
+          description: 인증 필요
+        '404':
+          description: 사용자 없음
+        '500':
+          description: 서버 오류
+
+  /notifications/{id}:
+    delete:
+      tags: [Notification]
+      summary: 알림 삭제
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 알림 삭제 성공
+        '400':
+          description: 잘못된 ID
+        '401':
+          description: 인증 필요
+        '403':
+          description: 권한 없음
+        '404':
+          description: 알림 / 사용자 없음
+        '500':
+          description: 서버 오류
