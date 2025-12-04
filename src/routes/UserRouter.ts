@@ -26,4 +26,5 @@ router.put('/nickname', authenticateToken, updateNickname);
 router.post('/change-password', authenticateToken, changePassword);
 
 router.post('/withdraw', authenticateToken, withdraw);
+
 export default router;
